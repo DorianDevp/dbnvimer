@@ -2,29 +2,42 @@
 
 DBClient.nvim is a Neovim database client with a Lua UI and a Rust core.
 
-The first supported adapter is MariaDB. The adapter is lazy-loaded, so future
-database adapters can provide their own Rust command surface without loading UI
-or connection code until the user opens a connection.
+Adapters are lazy-loaded, so database-specific code is only loaded when a
+configured connection needs it.
 
 ## Status
 
-This is an initial implementation. It provides:
+This is an initial implementation intended for publication after more real
+database testing. It was built with AI-assisted rapid development, so treat the
+current version as early software: useful, inspectable, and moving quickly, but
+not yet a mature database client.
 
-- MariaDB connections through `dbclient-core`.
+## Publishing Plan
+
+DBClient.nvim is being prepared for public release. Before publishing, the main
+work is adapter hardening against real MariaDB, PostgreSQL, and SQLite
+databases, plus focused tests around cell updates, SSH tunnels, and result
+rendering.
+
+## Features
+
+- MariaDB, PostgreSQL, and SQLite adapters through `dbclient-core`.
 - SSH local forwarding support for database connections behind a jump host.
-- A keyboard-first DataGrip-inspired Neovim UI.
+- A keyboard-first, Neovim-native database workspace.
 - Query execution into scratch result buffers.
 - Data preview buffers with explicit primary-key guarded cell updates.
 - Schema/object inspection buffers separate from data buffers.
 - Procedure/function discovery with query-buffer call seeding.
-- A small adapter registry for lazy database backends.
+- Lazy Lua adapter registry and Rust `DbAdapter` implementations.
+- Reusable scratch buffers with default Neovim highlight groups.
 
 ## Requirements
 
 - Neovim 0.10 or newer.
 - Rust stable toolchain.
 - `ssh` on `PATH` when using SSH tunnels.
-- MariaDB access from the local machine or through SSH forwarding.
+- MariaDB, PostgreSQL, or SQLite access from the local machine or through SSH
+  forwarding where supported by the adapter.
 
 ## Build
 
@@ -71,9 +84,24 @@ require("dbclient").setup({
         remote_port = 3306,
       },
     },
+    local_postgres = {
+      adapter = "postgres",
+      host = "127.0.0.1",
+      port = 5432,
+      user = "postgres",
+      password = vim.env.POSTGRES_PASSWORD,
+      database = "app",
+    },
+    local_sqlite = {
+      adapter = "sqlite",
+      path = vim.fn.expand("~/data/app.sqlite3"),
+    },
   },
 })
 ```
+
+SQLite uses `path` for the database file. PostgreSQL supports the same optional
+`ssh` table as MariaDB.
 
 ## Commands
 
@@ -106,7 +134,13 @@ require("dbclient").setup({
 ## Adapter Shape
 
 Adapters live under `lua/dbclient/adapters/<name>.lua` and are only loaded when
-selected. Each adapter returns a table with:
+selected. Current adapters:
+
+- `mariadb`
+- `postgres`
+- `sqlite`
+
+Each adapter returns a table with:
 
 - `connect(connection, config)`
 - `close(handle)`
@@ -119,8 +153,8 @@ selected. Each adapter returns a table with:
 - `query(handle, sql)`
 
 This keeps DB-specific code outside the UI and lets new adapters remain lazy.
-The Rust core mirrors this with a `DbAdapter` trait; MariaDB-specific SQL,
-identifier quoting, and value validation live in the MariaDB adapter module.
+The Rust core mirrors this with a `DbAdapter` trait; DB-specific SQL,
+identifier quoting, and value validation live in Rust adapter modules.
 
 ## Documentation Log
 

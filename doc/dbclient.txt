@@ -1,4 +1,4 @@
-*dbclient.txt*  Keyboard-first MariaDB client for Neovim
+*dbclient.txt*  Keyboard-first database client for Neovim
 
 ==============================================================================
 CONTENTS                                                *dbclient-contents*
@@ -14,10 +14,12 @@ CONTENTS                                                *dbclient-contents*
 OVERVIEW                                                *dbclient-overview*
 
 DBClient.nvim is a Lua Neovim plugin backed by a Rust executable. The UI is
-keyboard-first and borrows the familiar database tree, query editor, and result
-grid workflow from DataGrip while staying inside normal Neovim buffers.
+keyboard-first and stays inside normal Neovim buffers: object tree, query
+buffer, result buffer, data buffer, and inspection buffer.
 
-The initial adapter supports MariaDB.
+Current adapters support MariaDB, PostgreSQL, and SQLite. The project was built
+with AI-assisted rapid development and should be treated as early software until
+more real database testing lands.
 
 ==============================================================================
 SETUP                                                   *dbclient-setup*
@@ -35,6 +37,18 @@ SETUP                                                   *dbclient-setup*
         user = "root",
         password = vim.env.MARIADB_PASSWORD,
         database = "app",
+      },
+      local_postgres = {
+        adapter = "postgres",
+        host = "127.0.0.1",
+        port = 5432,
+        user = "postgres",
+        password = vim.env.POSTGRES_PASSWORD,
+        database = "app",
+      },
+      local_sqlite = {
+        adapter = "sqlite",
+        path = vim.fn.expand("~/data/app.sqlite3"),
       },
     },
   })
@@ -105,8 +119,9 @@ Global:
 ==============================================================================
 SSH TUNNELS                                             *dbclient-ssh*
 
-Connections may include an `ssh` table. DBClient starts a local forwarding
-process before connecting and stops it when the connection is closed.
+MariaDB and PostgreSQL connections may include an `ssh` table. DBClient starts
+a local forwarding process before connecting and stops it when the connection
+is closed.
 
 >
   ssh = {
@@ -128,6 +143,13 @@ ADAPTER API                                             *dbclient-adapters*
 
 Adapters are Lua modules loaded on demand from `lua/dbclient/adapters`.
 
+Current adapter names:
+>
+  mariadb
+  postgres
+  sqlite
+<
+
 Each adapter returns:
 >
   connect(connection, config) -> handle
@@ -146,6 +168,7 @@ registry for a configured backend, which keeps future adapters lazy.
 
 The Rust core has the same boundary. Its CLI dispatch uses a `DbAdapter` trait,
 and database-specific SQL, quoting, and value validation live inside adapter
-modules such as `adapters/mariadb.rs`.
+modules such as `adapters/mariadb.rs`, `adapters/postgres.rs`, and
+`adapters/sqlite.rs`.
 
  vim:tw=78:ts=8:ft=help:norl:

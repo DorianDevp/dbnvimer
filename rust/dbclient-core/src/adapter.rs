@@ -11,6 +11,7 @@ pub struct Connection {
     pub user: String,
     pub password: Option<String>,
     pub database: Option<String>,
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

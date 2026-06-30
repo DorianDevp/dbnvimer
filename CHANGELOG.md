@@ -4,6 +4,8 @@
 
 - Initialized the plugin as MIT-licensed software.
 - Added `dbclient-core`, a Rust JSON CLI for MariaDB metadata and query calls.
+- Added PostgreSQL and SQLite adapters behind the same Lua/Rust adapter
+  interfaces.
 - Added SSH local tunnel open/close support through the Rust core.
 - Added a lazy Lua adapter registry with the first `mariadb` adapter.
 - Added Lua state management for active connections and metadata cache.

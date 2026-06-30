@@ -4,6 +4,8 @@ mod tunnel;
 
 use adapter::{CellUpdate, Connection, DbAdapter};
 use adapters::mariadb::MariaDbAdapter;
+use adapters::postgres::PostgresAdapter;
+use adapters::sqlite::SqliteAdapter;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use serde::Deserialize;
@@ -117,6 +119,8 @@ fn read_request() -> Result<Request> {
 fn adapter(request: &Request) -> Result<Box<dyn DbAdapter>> {
     match request.adapter.as_deref().unwrap_or("mariadb") {
         "mariadb" => Ok(Box::new(MariaDbAdapter)),
+        "postgres" | "postgresql" => Ok(Box::new(PostgresAdapter)),
+        "sqlite" | "sqlite3" => Ok(Box::new(SqliteAdapter)),
         name => anyhow::bail!("unknown database adapter: {name}"),
     }
 }
