@@ -52,7 +52,7 @@ struct Request {
 
 fn main() {
     if let Err(error) = run() {
-        let payload = json!({ "ok": false, "error": error.to_string() });
+        let payload = json!({ "ok": false, "error": format!("{error:#}") });
         println!("{}", serde_json::to_string(&payload).unwrap());
         std::process::exit(1);
     }

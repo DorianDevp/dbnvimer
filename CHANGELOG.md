@@ -19,4 +19,6 @@
 - Added reusable named scratch buffers to avoid `E95` reopen collisions.
 - Added default Neovim highlight groups for tree, table, result, and inspect
   buffers.
+- Added README screenshots generated from a real MariaDB Docker-backed DBClient
+  session.
 - Added Neovim help documentation and setup examples.

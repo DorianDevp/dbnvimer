@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="680" viewBox="0 0 1180 680" role="img">
+<rect width="1180" height="680" fill="#15161a"/>
+<rect x="18" y="18" width="1144" height="644" rx="8" fill="#1f2329" stroke="#3b4048"/>
+<rect x="34" y="70" width="332" height="574" fill="#181b20" stroke="#3b4048"/>
+<rect x="366" y="70" width="778" height="390" fill="#16191f" stroke="#3b4048"/>
+<rect x="366" y="460" width="778" height="184" fill="#181b20" stroke="#3b4048"/>
+<text x="54" y="104" font-family="monospace" font-size="16" fill="#e5c07b">DBClient tree - MariaDB</text>
+<text x="54" y="136" font-family="monospace" font-size="14" fill="#e5c07b">v [db] shot_mariadb</text>
+<text x="54" y="161" font-family="monospace" font-size="14" fill="#c678dd">  &gt; [schema] information_schema</text>
+<text x="54" y="186" font-family="monospace" font-size="14" fill="#c678dd">  &gt; [schema] mysql</text>
+<text x="54" y="211" font-family="monospace" font-size="14" fill="#c678dd">  &gt; [schema] performance_schema</text>
+<text x="54" y="236" font-family="monospace" font-size="14" fill="#c678dd">  v [schema] shop</text>
+<text x="54" y="261" font-family="monospace" font-size="14" fill="#abb2bf">    v tables</text>
+<text x="54" y="286" font-family="monospace" font-size="14" fill="#98c379">      &gt; [table] customers</text>
+<text x="54" y="311" font-family="monospace" font-size="14" fill="#98c379">      v [table] orders</text>
+<text x="54" y="336" font-family="monospace" font-size="14" fill="#56b6c2">          [col] id : int(11)</text>
+<text x="54" y="361" font-family="monospace" font-size="14" fill="#56b6c2">          [col] customer_id : int(11)</text>
+<text x="54" y="386" font-family="monospace" font-size="14" fill="#56b6c2">          [col] status : varchar(32)</text>
+<text x="54" y="411" font-family="monospace" font-size="14" fill="#56b6c2">          [col] total : decimal(10,2)</text>
+<text x="54" y="436" font-family="monospace" font-size="14" fill="#56b6c2">          [col] created_at : timestamp</text>
+<text x="54" y="461" font-family="monospace" font-size="14" fill="#98c379">      &gt; [table] order_items</text>
+<text x="54" y="486" font-family="monospace" font-size="14" fill="#98c379">      &gt; [table] products</text>
+<text x="54" y="511" font-family="monospace" font-size="14" fill="#abb2bf">    v procedures/functions</text>
+<text x="54" y="536" font-family="monospace" font-size="14" fill="#98c379">        [procedure] recent_orders</text>
+<text x="410" y="104" font-family="monospace" font-size="16" fill="#e5c07b">DBClient Query - shot_mariadb</text>
+<text x="410" y="140" font-family="monospace" font-size="15" fill="#abb2bf">select c.email, count(o.id) as orders, sum(o.total) as revenue</text>
+<text x="410" y="168" font-family="monospace" font-size="15" fill="#abb2bf">from customers c</text>
+<text x="410" y="196" font-family="monospace" font-size="15" fill="#abb2bf">left join orders o on o.customer_id = c.id</text>
+<text x="410" y="224" font-family="monospace" font-size="15" fill="#abb2bf">group by c.email</text>
+<text x="410" y="252" font-family="monospace" font-size="15" fill="#abb2bf">order by revenue desc;</text>
+<text x="410" y="492" font-family="monospace" font-size="16" fill="#e5c07b">DBClient Results</text>
+<text x="410" y="528" font-family="monospace" font-size="14" fill="#61afef">email | orders | revenue</text>
+<text x="410" y="554" font-family="monospace" font-size="14" fill="#5c6370">---+--------+--------</text>
+<text x="410" y="580" font-family="monospace" font-size="14" fill="#abb2bf">admin@example.com | 2 | 122.50</text>
+<rect x="402" y="588" width="680" height="28" fill="#20242b"/>
+<text x="410" y="606" font-family="monospace" font-size="14" fill="#abb2bf">ops@example.com | 1 | 59.90</text>
+<text x="410" y="632" font-family="monospace" font-size="14" fill="#abb2bf">readonly@example.com | 0 | NULL</text>
+</svg>
