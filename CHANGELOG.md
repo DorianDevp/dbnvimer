@@ -14,4 +14,7 @@
 - Added routines, table previews, and primary-key guarded cell updates.
 - Added Vim-native table search, table jumps, data buffers, inspection buffers,
   query-buffer focusing, and fullscreen toggles.
+- Added reusable named scratch buffers to avoid `E95` reopen collisions.
+- Added default Neovim highlight groups for tree, table, result, and inspect
+  buffers.
 - Added Neovim help documentation and setup examples.

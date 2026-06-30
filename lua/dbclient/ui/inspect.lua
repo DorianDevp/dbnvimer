@@ -1,4 +1,6 @@
 local state = require("dbclient.state")
+local buffer = require("dbclient.ui.buffer")
+local highlights = require("dbclient.ui.highlights")
 local window = require("dbclient.ui.window")
 
 local M = {
@@ -18,10 +20,12 @@ local function open_lines(name, lines)
   vim.bo[M.buf].bufhidden = "hide"
   vim.bo[M.buf].swapfile = false
   vim.bo[M.buf].filetype = "dbclient-inspect"
-  vim.api.nvim_buf_set_name(M.buf, "DBClient Inspect - " .. name)
+  M.buf = buffer.set_name(M.buf, "DBClient Inspect - " .. name)
   vim.bo[M.buf].modifiable = true
   vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, lines)
   vim.bo[M.buf].modifiable = false
+  vim.wo.cursorline = true
+  highlights.inspect(M.buf, #lines)
   vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = M.buf, silent = true })
   vim.keymap.set("n", "F", window.toggle_fullscreen, { buffer = M.buf, silent = true })
 end

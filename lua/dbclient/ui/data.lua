@@ -1,4 +1,6 @@
 local config = require("dbclient.config")
+local buffer = require("dbclient.ui.buffer")
+local highlights = require("dbclient.ui.highlights")
 local state = require("dbclient.state")
 local window = require("dbclient.ui.window")
 
@@ -211,10 +213,14 @@ function M.open(schema, table_name, limit)
   vim.bo[M.buf].bufhidden = "hide"
   vim.bo[M.buf].swapfile = false
   vim.bo[M.buf].filetype = "dbclient-data"
-  vim.api.nvim_buf_set_name(M.buf, "DBClient Data - " .. schema .. "." .. table_name)
+  M.buf = buffer.set_name(M.buf, "DBClient Data - " .. schema .. "." .. table_name)
   vim.bo[M.buf].modifiable = true
-  vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, render(M.view))
+  local lines = render(M.view)
+  vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, lines)
   vim.bo[M.buf].modifiable = false
+  vim.wo.cursorline = true
+  vim.wo.cursorcolumn = true
+  highlights.table(M.buf, #lines)
 
   vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = M.buf, silent = true })
   vim.keymap.set("n", "r", M.refresh, { buffer = M.buf, silent = true })

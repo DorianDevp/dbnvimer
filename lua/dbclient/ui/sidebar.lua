@@ -1,5 +1,7 @@
 local config = require("dbclient.config")
+local buffer = require("dbclient.ui.buffer")
 local data = require("dbclient.ui.data")
+local highlights = require("dbclient.ui.highlights")
 local inspect = require("dbclient.ui.inspect")
 local query = require("dbclient.ui.query")
 local state = require("dbclient.state")
@@ -146,6 +148,7 @@ function M.render()
   vim.bo[M.buf].modifiable = true
   vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, lines)
   vim.bo[M.buf].modifiable = false
+  highlights.sidebar(M.buf, nodes)
 end
 
 local function node_under_cursor()
@@ -268,18 +271,17 @@ function M.open()
     return
   end
 
-  vim.cmd("topleft " .. config.get().ui.sidebar_width .. "vnew")
-  M.win = vim.api.nvim_get_current_win()
-  M.buf = vim.api.nvim_get_current_buf()
+  M.buf, M.win = buffer.open_named("DBClient", "topleft " .. config.get().ui.sidebar_width .. "vnew")
   vim.bo[M.buf].buftype = "nofile"
   vim.bo[M.buf].bufhidden = "hide"
   vim.bo[M.buf].swapfile = false
   vim.bo[M.buf].filetype = "dbclient"
   vim.bo[M.buf].modifiable = false
+  M.buf = buffer.set_name(M.buf, "DBClient")
   vim.wo[M.win].number = false
   vim.wo[M.win].relativenumber = false
+  vim.wo[M.win].cursorline = true
   vim.wo[M.win].signcolumn = "no"
-  vim.api.nvim_buf_set_name(M.buf, "DBClient")
 
   vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = M.buf, silent = true })
   vim.keymap.set("n", "<CR>", M.open_node, { buffer = M.buf, silent = true })

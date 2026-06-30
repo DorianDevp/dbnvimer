@@ -1,4 +1,6 @@
 local config = require("dbclient.config")
+local buffer = require("dbclient.ui.buffer")
+local highlights = require("dbclient.ui.highlights")
 local window = require("dbclient.ui.window")
 
 local M = {}
@@ -69,14 +71,16 @@ end
 
 function M.show(result)
   local height = config.get().ui.result_height
-  vim.cmd("botright " .. height .. "new")
-  local buf = vim.api.nvim_get_current_buf()
+  local buf = buffer.open_or_create("DBClient Results", "botright " .. height .. "new")
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].swapfile = false
   vim.bo[buf].filetype = "dbclient-result"
-  vim.api.nvim_buf_set_name(buf, "DBClient Results")
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, render_table(result))
+  buf = buffer.set_name(buf, "DBClient Results")
+  local lines = render_table(result)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.wo.cursorline = true
+  highlights.table(buf, #lines)
   vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = buf, silent = true })
   vim.keymap.set("n", "F", window.toggle_fullscreen, { buffer = buf, silent = true })
 end
