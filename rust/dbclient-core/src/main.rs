@@ -7,6 +7,8 @@ use serde_json::{json, Value as JsonValue};
 use std::io::{self, Read};
 use std::net::TcpListener;
 use std::process::{Command, Stdio};
+use std::thread;
+use std::time::Duration;
 
 #[derive(Parser)]
 #[command(version, about)]
@@ -283,13 +285,18 @@ fn open_tunnel(ssh: SshConfig) -> Result<TunnelHandle> {
         command.arg("-i").arg(identity_file);
     }
 
-    let child = command
+    let mut child = command
         .arg(target)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
         .context("failed to start ssh tunnel")?;
+
+    thread::sleep(Duration::from_millis(150));
+    if let Some(status) = child.try_wait().context("failed to inspect ssh tunnel")? {
+        return Err(anyhow!("ssh tunnel exited early with status {status}"));
+    }
 
     Ok(TunnelHandle {
         pid: child.id(),

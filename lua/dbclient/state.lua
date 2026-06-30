@@ -31,10 +31,11 @@ function M.connect(name)
 
   local connection = connection_named(name)
   local adapter = adapters.get(connection.adapter or "mariadb")
+  local handle = adapter.connect(connection, config.get())
 
   M.active_name = name
   M.active_adapter = adapter
-  M.active_handle = adapter.connect(connection, config.get())
+  M.active_handle = handle
   M.cache = { schemas = nil, tables = {}, columns = {} }
   return M.active_handle
 end
