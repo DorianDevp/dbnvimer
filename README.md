@@ -83,9 +83,11 @@ require("dbclient").setup({
 
 - `q` closes DBClient windows.
 - `<CR>` opens the item under cursor.
+- `o` opens the item under cursor.
 - `r` refreshes schemas and tables.
 - `e` opens a query buffer for the active connection.
 - `<leader>dq` executes SQL from a query buffer.
+- `<C-CR>` executes SQL from normal or insert mode in a query buffer.
 - `<leader>dc` opens the connection picker.
 
 ## Adapter Shape
@@ -105,4 +107,13 @@ This keeps DB-specific code outside the UI and lets new adapters remain lazy.
 ## Documentation Log
 
 The git history documents each implementation step with small commits. User
-visible behavior is also covered in `doc/dbclient.txt`.
+visible behavior is also covered in `doc/dbclient.txt`, and release-level notes
+are kept in `CHANGELOG.md`.
+
+## Development Checks
+
+```sh
+cargo fmt --manifest-path rust/dbclient-core/Cargo.toml
+cargo check --manifest-path rust/dbclient-core/Cargo.toml
+nvim --headless -u NONE -i NONE -c "set rtp+=." -c "lua require('dbclient').setup({ connections = {} })" -c "qa"
+```

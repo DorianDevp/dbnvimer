@@ -67,11 +67,13 @@ KEYS                                                    *dbclient-keys*
 Sidebar:
 q           Close sidebar.
 <CR>        Open the focused item.
+o           Open the focused item.
 r           Refresh schema metadata.
 e           Open a query buffer.
 
 Query buffers:
 <leader>dq  Execute selected SQL or current statement.
+<C-CR>      Execute current SQL from normal or insert mode.
 
 Global:
 <leader>dc  Pick a configured connection.
