@@ -1,0 +1,118 @@
+*dbclient.txt*  Keyboard-first MariaDB client for Neovim
+
+==============================================================================
+CONTENTS                                                *dbclient-contents*
+
+1. Overview                                             |dbclient-overview|
+2. Setup                                                |dbclient-setup|
+3. Commands                                             |dbclient-commands|
+4. Keys                                                 |dbclient-keys|
+5. SSH tunnels                                          |dbclient-ssh|
+6. Adapter API                                          |dbclient-adapters|
+
+==============================================================================
+OVERVIEW                                                *dbclient-overview*
+
+DBClient.nvim is a Lua Neovim plugin backed by a Rust executable. The UI is
+keyboard-first and borrows the familiar database tree, query editor, and result
+grid workflow from DataGrip while staying inside normal Neovim buffers.
+
+The initial adapter supports MariaDB.
+
+==============================================================================
+SETUP                                                   *dbclient-setup*
+
+>
+  require("dbclient").setup({
+    core = {
+      command = vim.fn.getcwd() .. "/rust/dbclient-core/target/release/dbclient-core",
+    },
+    connections = {
+      local_mariadb = {
+        adapter = "mariadb",
+        host = "127.0.0.1",
+        port = 3306,
+        user = "root",
+        password = vim.env.MARIADB_PASSWORD,
+        database = "app",
+      },
+    },
+  })
+<
+
+Build the Rust core first:
+>
+  cargo build --release --manifest-path rust/dbclient-core/Cargo.toml
+<
+
+==============================================================================
+COMMANDS                                                *dbclient-commands*
+
+:DBClient
+    Open the DBClient sidebar.
+
+:DBClientConnect {name}
+    Select a configured connection.
+
+:DBClientQuery
+    Execute selected SQL, or the current statement if no visual selection
+    exists.
+
+:DBClientClose
+    Close active SSH tunnels and clear the selected connection.
+
+==============================================================================
+KEYS                                                    *dbclient-keys*
+
+Sidebar:
+q           Close sidebar.
+<CR>        Open the focused item.
+r           Refresh schema metadata.
+e           Open a query buffer.
+
+Query buffers:
+<leader>dq  Execute selected SQL or current statement.
+
+Global:
+<leader>dc  Pick a configured connection.
+
+==============================================================================
+SSH TUNNELS                                             *dbclient-ssh*
+
+Connections may include an `ssh` table. DBClient starts a local forwarding
+process before connecting and stops it when the connection is closed.
+
+>
+  ssh = {
+    host = "bastion.example.com",
+    user = "deploy",
+    port = 22,
+    identity_file = "~/.ssh/id_ed25519",
+    remote_host = "127.0.0.1",
+    remote_port = 3306,
+    local_host = "127.0.0.1",
+    local_port = 0,
+  }
+<
+
+When `local_port` is 0 or omitted, the Rust core asks the OS for a free port.
+
+==============================================================================
+ADAPTER API                                             *dbclient-adapters*
+
+Adapters are Lua modules loaded on demand from `lua/dbclient/adapters`.
+
+Each adapter returns:
+>
+  connect(connection, config) -> handle
+  close(handle)
+  schemas(handle) -> string[]
+  tables(handle, schema) -> table[]
+  columns(handle, schema, table) -> table[]
+  query(handle, sql) -> result
+<
+
+The UI never imports database-specific modules directly. It asks the adapter
+registry for a configured backend, which keeps future adapters lazy.
+
+ vim:tw=78:ts=8:ft=help:norl:
