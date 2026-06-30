@@ -4,6 +4,7 @@ local M = {}
 
 local function core_connection(connection)
   return {
+    adapter = "mariadb",
     host = connection.host,
     port = connection.port or 3306,
     user = connection.user,
@@ -43,12 +44,14 @@ end
 
 function M.schemas(handle)
   return core.run("schemas", {
+    adapter = "mariadb",
     connection = core_connection(handle.connection),
   })
 end
 
 function M.tables(handle, schema)
   return core.run("tables", {
+    adapter = "mariadb",
     connection = core_connection(handle.connection),
     schema = schema,
   })
@@ -56,14 +59,46 @@ end
 
 function M.columns(handle, schema, table_name)
   return core.run("columns", {
+    adapter = "mariadb",
     connection = core_connection(handle.connection),
     schema = schema,
     table = table_name,
   })
 end
 
+function M.routines(handle, schema)
+  return core.run("routines", {
+    adapter = "mariadb",
+    connection = core_connection(handle.connection),
+    schema = schema,
+  })
+end
+
+function M.preview(handle, schema, table_name, limit)
+  return core.run("preview", {
+    adapter = "mariadb",
+    connection = core_connection(handle.connection),
+    schema = schema,
+    table = table_name,
+    limit = limit,
+  })
+end
+
+function M.update_cell(handle, schema, table_name, column, value, pk)
+  return core.run("update-cell", {
+    adapter = "mariadb",
+    connection = core_connection(handle.connection),
+    schema = schema,
+    table = table_name,
+    column = column,
+    value = value,
+    pk = pk,
+  })
+end
+
 function M.query(handle, sql)
   return core.run("query", {
+    adapter = "mariadb",
     connection = core_connection(handle.connection),
     sql = sql,
   })

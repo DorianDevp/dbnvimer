@@ -9,6 +9,7 @@ local M = {
     schemas = nil,
     tables = {},
     columns = {},
+    routines = {},
   },
 }
 
@@ -36,7 +37,7 @@ function M.connect(name)
   M.active_name = name
   M.active_adapter = adapter
   M.active_handle = handle
-  M.cache = { schemas = nil, tables = {}, columns = {} }
+  M.cache = { schemas = nil, tables = {}, columns = {}, routines = {} }
   return M.active_handle
 end
 
@@ -58,11 +59,11 @@ function M.close()
   M.active_name = nil
   M.active_handle = nil
   M.active_adapter = nil
-  M.cache = { schemas = nil, tables = {}, columns = {} }
+  M.cache = { schemas = nil, tables = {}, columns = {}, routines = {} }
 end
 
 function M.invalidate()
-  M.cache = { schemas = nil, tables = {}, columns = {} }
+  M.cache = { schemas = nil, tables = {}, columns = {}, routines = {} }
 end
 
 function M.schemas(force)
@@ -88,6 +89,24 @@ function M.columns(schema, table_name, force)
     M.cache.columns[key] = adapter.columns(handle, schema, table_name)
   end
   return M.cache.columns[key]
+end
+
+function M.routines(schema, force)
+  local adapter, handle = M.ensure_connected()
+  if force or not M.cache.routines[schema] then
+    M.cache.routines[schema] = adapter.routines(handle, schema)
+  end
+  return M.cache.routines[schema]
+end
+
+function M.preview(schema, table_name, limit)
+  local adapter, handle = M.ensure_connected()
+  return adapter.preview(handle, schema, table_name, limit)
+end
+
+function M.update_cell(schema, table_name, column, value, pk)
+  local adapter, handle = M.ensure_connected()
+  return adapter.update_cell(handle, schema, table_name, column, value, pk)
 end
 
 function M.query(sql)
