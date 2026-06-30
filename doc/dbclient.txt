@@ -58,6 +58,12 @@ COMMANDS                                                *dbclient-commands*
     Execute selected SQL, or the current statement if no visual selection
     exists.
 
+:DBClientQueryTab
+    Open or focus the query buffer.
+
+:DBClientData {schema.table}
+    Open a table data preview buffer.
+
 :DBClientClose
     Close active SSH tunnels and clear the selected connection.
 
@@ -68,12 +74,30 @@ Sidebar:
 q           Close sidebar.
 <CR>        Open the focused item.
 o           Open the focused item.
+gd          Open data for the focused table.
+gs          Inspect the focused schema or table.
+gq          Open or focus the query buffer.
+]t          Jump to the next visible table.
+[t          Jump to the previous visible table.
+s           Search visible table names.
+n           Repeat the last table-name match.
 r           Refresh schema metadata.
 e           Open a query buffer.
+F           Toggle fullscreen for the current DBClient window.
 
 Query buffers:
 <leader>dq  Execute selected SQL or current statement.
 <C-CR>      Execute current SQL from normal or insert mode.
+F           Toggle fullscreen.
+
+Data buffers:
+]c          Move to the next cell.
+[c          Move to the previous cell.
+]r          Move to the next row.
+[r          Move to the previous row.
+E           Edit the current cell. Updates require a primary key.
+r           Reload the table preview.
+F           Toggle fullscreen.
 
 Global:
 <leader>dc  Pick a configured connection.
@@ -111,10 +135,17 @@ Each adapter returns:
   schemas(handle) -> string[]
   tables(handle, schema) -> table[]
   columns(handle, schema, table) -> table[]
+  routines(handle, schema) -> table[]
+  preview(handle, schema, table, limit) -> result
+  update_cell(handle, schema, table, column, value, pk) -> result
   query(handle, sql) -> result
 <
 
 The UI never imports database-specific modules directly. It asks the adapter
 registry for a configured backend, which keeps future adapters lazy.
+
+The Rust core has the same boundary. Its CLI dispatch uses a `DbAdapter` trait,
+and database-specific SQL, quoting, and value validation live inside adapter
+modules such as `adapters/mariadb.rs`.
 
  vim:tw=78:ts=8:ft=help:norl:

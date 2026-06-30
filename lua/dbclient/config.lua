@@ -8,6 +8,7 @@ local defaults = {
     sidebar_width = 38,
     result_height = 14,
     max_cell_width = 48,
+    preview_limit = 200,
   },
   connections = {},
 }

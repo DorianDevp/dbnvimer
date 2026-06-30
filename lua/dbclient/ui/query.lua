@@ -1,7 +1,10 @@
 local results = require("dbclient.ui.results")
 local state = require("dbclient.state")
+local window = require("dbclient.ui.window")
 
-local M = {}
+local M = {
+  buf = nil,
+}
 
 local function visual_selection()
   local mode = vim.fn.mode()
@@ -68,16 +71,30 @@ end
 
 function M.open()
   state.ensure_connected()
+  if M.buf and vim.api.nvim_buf_is_valid(M.buf) and window.focus(M.buf) then
+    return
+  end
+
   vim.cmd("enew")
-  local buf = vim.api.nvim_get_current_buf()
+  M.buf = vim.api.nvim_get_current_buf()
+  local buf = M.buf
   vim.bo[buf].filetype = "sql"
   vim.bo[buf].bufhidden = "hide"
   vim.api.nvim_buf_set_name(buf, "DBClient Query - " .. state.active_name)
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
-    "select 1;",
-  })
+  if vim.api.nvim_buf_line_count(buf) == 1 and vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] == "" then
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "select 1;" })
+  end
   vim.keymap.set({ "n", "v" }, "<leader>dq", M.execute, { buffer = buf, silent = true })
   vim.keymap.set({ "n", "i" }, "<C-CR>", M.execute, { buffer = buf, silent = true })
+  vim.keymap.set("n", "F", window.toggle_fullscreen, { buffer = buf, silent = true })
+end
+
+function M.open_with(sql)
+  M.open()
+  if sql and sql ~= "" then
+    vim.api.nvim_buf_set_lines(M.buf, -1, -1, false, { "", sql })
+    vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(M.buf), 0 })
+  end
 end
 
 return M

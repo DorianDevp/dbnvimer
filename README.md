@@ -14,6 +14,9 @@ This is an initial implementation. It provides:
 - SSH local forwarding support for database connections behind a jump host.
 - A keyboard-first DataGrip-inspired Neovim UI.
 - Query execution into scratch result buffers.
+- Data preview buffers with explicit primary-key guarded cell updates.
+- Schema/object inspection buffers separate from data buffers.
+- Procedure/function discovery with query-buffer call seeding.
 - A small adapter registry for lazy database backends.
 
 ## Requirements
@@ -77,6 +80,8 @@ require("dbclient").setup({
 - `:DBClient` opens the database sidebar.
 - `:DBClientConnect <name>` selects a configured connection.
 - `:DBClientQuery` executes the selected SQL or current statement.
+- `:DBClientQueryTab` opens or focuses the query buffer.
+- `:DBClientData <schema.table>` opens a table preview buffer.
 - `:DBClientClose` closes active tunnels.
 
 ## Keyboard
@@ -84,8 +89,16 @@ require("dbclient").setup({
 - `q` closes DBClient windows.
 - `<CR>` opens the item under cursor.
 - `o` opens the item under cursor.
+- `gd` opens table data for the focused table.
+- `gs` opens schema or table inspection.
+- `gq` opens or focuses the query buffer.
+- `]t` / `[t` jump between visible tables.
+- `s` searches visible table names.
+- `n` repeats the last table-name match.
 - `r` refreshes schemas and tables.
 - `e` opens a query buffer for the active connection.
+- `F` toggles fullscreen for DBClient windows.
+- In data buffers, `]c` / `[c` move cells, `]r` / `[r` move rows, and `E` edits the current cell.
 - `<leader>dq` executes SQL from a query buffer.
 - `<C-CR>` executes SQL from normal or insert mode in a query buffer.
 - `<leader>dc` opens the connection picker.
@@ -100,9 +113,14 @@ selected. Each adapter returns a table with:
 - `schemas(handle)`
 - `tables(handle, schema)`
 - `columns(handle, schema, table)`
+- `routines(handle, schema)`
+- `preview(handle, schema, table, limit)`
+- `update_cell(handle, schema, table, column, value, pk)`
 - `query(handle, sql)`
 
 This keeps DB-specific code outside the UI and lets new adapters remain lazy.
+The Rust core mirrors this with a `DbAdapter` trait; MariaDB-specific SQL,
+identifier quoting, and value validation live in the MariaDB adapter module.
 
 ## Documentation Log
 

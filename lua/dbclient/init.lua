@@ -1,4 +1,5 @@
 local config = require("dbclient.config")
+local data = require("dbclient.ui.data")
 local query = require("dbclient.ui.query")
 local sidebar = require("dbclient.ui.sidebar")
 local state = require("dbclient.state")
@@ -10,6 +11,15 @@ function M.setup(opts)
 
   vim.api.nvim_create_user_command("DBClient", M.open, {})
   vim.api.nvim_create_user_command("DBClientQuery", query.execute, { range = true })
+  vim.api.nvim_create_user_command("DBClientQueryTab", query.open, {})
+  vim.api.nvim_create_user_command("DBClientData", function(args)
+    local parts = vim.split(args.args, ".", { plain = true })
+    if #parts ~= 2 then
+      vim.notify("usage: DBClientData schema.table", vim.log.levels.ERROR)
+      return
+    end
+    data.open(parts[1], parts[2])
+  end, { nargs = 1 })
   vim.api.nvim_create_user_command("DBClientClose", M.close, {})
   vim.api.nvim_create_user_command("DBClientConnect", function(args)
     M.connect(args.args)
@@ -21,6 +31,7 @@ function M.setup(opts)
   })
 
   vim.keymap.set("n", "<leader>dc", M.pick_connection, { silent = true })
+  vim.keymap.set("n", "<leader>dq", query.open, { silent = true })
 end
 
 function M.open()

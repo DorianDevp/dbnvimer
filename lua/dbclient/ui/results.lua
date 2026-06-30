@@ -1,4 +1,5 @@
 local config = require("dbclient.config")
+local window = require("dbclient.ui.window")
 
 local M = {}
 
@@ -77,6 +78,7 @@ function M.show(result)
   vim.api.nvim_buf_set_name(buf, "DBClient Results")
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, render_table(result))
   vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = buf, silent = true })
+  vim.keymap.set("n", "F", window.toggle_fullscreen, { buffer = buf, silent = true })
 end
 
 return M
