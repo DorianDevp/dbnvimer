@@ -1,7 +1,7 @@
 use crate::adapter::{CellUpdate, Connection, DbAdapter, QueryOutput};
 use anyhow::{anyhow, Context, Result};
 use postgres::types::{ToSql, Type};
-use postgres::{Client, NoTls, Row};
+use postgres::{Client, GenericClient, NoTls, Row};
 use serde_json::{json, Value as JsonValue};
 
 pub struct PostgresAdapter;
@@ -91,41 +91,25 @@ impl DbAdapter for PostgresAdapter {
     }
 
     fn update_cell(&self, connection: &Connection, update: CellUpdate<'_>) -> Result<JsonValue> {
-        if update.pk.is_empty() {
-            return Err(anyhow!("cell update requires a primary key"));
-        }
-
         let mut client = postgres_connection(connection)?;
-        let target = column_meta(&mut client, update.schema, update.table, update.column)?;
-        let mut values = vec![validated_value(update.value, &target)?];
-        let mut filters = Vec::new();
+        let changed = apply_cell_update(&mut client, update)?;
+        Ok(json!({ "affected_rows": changed }))
+    }
 
-        for (index, (column, value)) in update.pk.iter().enumerate() {
-            let meta = column_meta(&mut client, update.schema, update.table, column)?;
-            values.push(validated_value(value, &meta)?);
-            filters.push(format!(
-                "{} is not distinct from ${}::{}",
-                quote_identifier(column),
-                index + 2,
-                meta.data_type
-            ));
+    fn update_cells(
+        &self,
+        connection: &Connection,
+        updates: &[CellUpdate<'_>],
+    ) -> Result<JsonValue> {
+        let mut client = postgres_connection(connection)?;
+        let mut transaction = client.transaction()?;
+        let mut changed = 0;
+
+        for update in updates {
+            changed += apply_cell_update(&mut transaction, *update)?;
         }
 
-        let params = values
-            .iter()
-            .map(|value| value as &(dyn ToSql + Sync))
-            .collect::<Vec<_>>();
-        let sql = format!(
-            "update {}.{} set {} = $1::{} where {}",
-            quote_identifier(update.schema),
-            quote_identifier(update.table),
-            quote_identifier(update.column),
-            target.data_type,
-            filters.join(" and ")
-        );
-        let changed = client
-            .execute(&sql, &params)
-            .context("failed to update PostgreSQL cell")?;
+        transaction.commit()?;
         Ok(json!({ "affected_rows": changed }))
     }
 
@@ -159,7 +143,11 @@ fn postgres_connection(connection: &Connection) -> Result<Client> {
     Client::connect(&params.join(" "), NoTls).context("failed to connect to PostgreSQL")
 }
 
-fn list_columns(client: &mut Client, schema: &str, table: &str) -> Result<Vec<JsonValue>> {
+fn list_columns<C: GenericClient>(
+    client: &mut C,
+    schema: &str,
+    table: &str,
+) -> Result<Vec<JsonValue>> {
     let rows = client.query(
         r#"
         select c.column_name,
@@ -196,7 +184,12 @@ fn list_columns(client: &mut Client, schema: &str, table: &str) -> Result<Vec<Js
         .collect())
 }
 
-fn column_meta(client: &mut Client, schema: &str, table: &str, column: &str) -> Result<ColumnMeta> {
+fn column_meta<C: GenericClient>(
+    client: &mut C,
+    schema: &str,
+    table: &str,
+    column: &str,
+) -> Result<ColumnMeta> {
     list_columns(client, schema, table)?
         .into_iter()
         .find(|item| item["name"] == column)
@@ -205,6 +198,43 @@ fn column_meta(client: &mut Client, schema: &str, table: &str, column: &str) -> 
             nullable: item["nullable"].as_bool().unwrap_or(true),
         })
         .ok_or_else(|| anyhow!("unknown column {schema}.{table}.{column}"))
+}
+
+fn apply_cell_update<C: GenericClient>(client: &mut C, update: CellUpdate<'_>) -> Result<u64> {
+    if update.pk.is_empty() {
+        return Err(anyhow!("cell update requires a primary key"));
+    }
+
+    let target = column_meta(client, update.schema, update.table, update.column)?;
+    let mut values = vec![validated_value(update.value, &target)?];
+    let mut filters = Vec::new();
+
+    for (index, (column, value)) in update.pk.iter().enumerate() {
+        let meta = column_meta(client, update.schema, update.table, column)?;
+        values.push(validated_value(value, &meta)?);
+        filters.push(format!(
+            "{} is not distinct from ${}::{}",
+            quote_identifier(column),
+            index + 2,
+            meta.data_type
+        ));
+    }
+
+    let params = values
+        .iter()
+        .map(|value| value as &(dyn ToSql + Sync))
+        .collect::<Vec<_>>();
+    let sql = format!(
+        "update {}.{} set {} = $1::{} where {}",
+        quote_identifier(update.schema),
+        quote_identifier(update.table),
+        quote_identifier(update.column),
+        target.data_type,
+        filters.join(" and ")
+    );
+    client
+        .execute(&sql, &params)
+        .context("failed to update PostgreSQL cell")
 }
 
 fn collect_query(

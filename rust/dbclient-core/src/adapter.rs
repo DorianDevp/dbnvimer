@@ -21,6 +21,7 @@ pub struct QueryOutput {
     pub affected_rows: u64,
 }
 
+#[derive(Clone, Copy)]
 pub struct CellUpdate<'a> {
     pub schema: &'a str,
     pub table: &'a str,
@@ -43,6 +44,11 @@ pub trait DbAdapter {
         limit: u64,
     ) -> Result<QueryOutput>;
     fn update_cell(&self, connection: &Connection, update: CellUpdate<'_>) -> Result<JsonValue>;
+    fn update_cells(
+        &self,
+        connection: &Connection,
+        updates: &[CellUpdate<'_>],
+    ) -> Result<JsonValue>;
     fn query(&self, connection: &Connection, sql: &str) -> Result<QueryOutput>;
 }
 

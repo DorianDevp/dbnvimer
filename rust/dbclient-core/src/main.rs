@@ -30,6 +30,7 @@ enum CommandKind {
     Routines,
     Preview,
     UpdateCell,
+    UpdateCells,
     Query,
     TunnelOpen,
     TunnelClose,
@@ -46,8 +47,18 @@ struct Request {
     column: Option<String>,
     value: Option<JsonValue>,
     pk: Option<BTreeMap<String, JsonValue>>,
+    updates: Option<Vec<CellUpdateRequest>>,
     limit: Option<u64>,
     sql: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CellUpdateRequest {
+    schema: String,
+    table: String,
+    column: String,
+    value: JsonValue,
+    pk: BTreeMap<String, JsonValue>,
 }
 
 fn main() {
@@ -93,6 +104,20 @@ fn run() -> Result<()> {
                 pk: request.pk.as_ref().context("missing primary key")?,
             },
         )?),
+        CommandKind::UpdateCells => {
+            let updates = request.updates.as_ref().context("missing updates")?;
+            let updates = updates
+                .iter()
+                .map(|update| CellUpdate {
+                    schema: &update.schema,
+                    table: &update.table,
+                    column: &update.column,
+                    value: &update.value,
+                    pk: &update.pk,
+                })
+                .collect::<Vec<_>>();
+            json_ok(adapter(&request)?.update_cells(connection(&request)?, &updates)?)
+        }
         CommandKind::Query => json_ok(adapter(&request)?.query(
             connection(&request)?,
             request.sql.as_deref().context("missing sql")?,

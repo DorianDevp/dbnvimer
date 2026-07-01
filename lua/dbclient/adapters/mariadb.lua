@@ -96,6 +96,14 @@ function M.update_cell(handle, schema, table_name, column, value, pk)
   })
 end
 
+function M.update_cells(handle, updates)
+  return core.run("update-cells", {
+    adapter = "mariadb",
+    connection = core_connection(handle.connection),
+    updates = updates,
+  })
+end
+
 function M.query(handle, sql)
   return core.run("query", {
     adapter = "mariadb",

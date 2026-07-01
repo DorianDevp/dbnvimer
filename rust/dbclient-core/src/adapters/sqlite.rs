@@ -64,31 +64,25 @@ impl DbAdapter for SqliteAdapter {
     }
 
     fn update_cell(&self, connection: &Connection, update: CellUpdate<'_>) -> Result<JsonValue> {
-        if update.pk.is_empty() {
-            return Err(anyhow!("cell update requires a primary key"));
-        }
-
         let conn = sqlite_connection(connection)?;
-        let target = column_meta(&conn, update.schema, update.table, update.column)?;
-        let mut values = vec![validated_value(update.value, &target)?];
-        let mut filters = Vec::new();
+        let changed = apply_cell_update(&conn, update)?;
+        Ok(json!({ "affected_rows": changed }))
+    }
 
-        for (column, value) in update.pk {
-            let meta = column_meta(&conn, update.schema, update.table, column)?;
-            values.push(validated_value(value, &meta)?);
-            filters.push(format!("{} is ?", quote_identifier(column)));
+    fn update_cells(
+        &self,
+        connection: &Connection,
+        updates: &[CellUpdate<'_>],
+    ) -> Result<JsonValue> {
+        let mut conn = sqlite_connection(connection)?;
+        let transaction = conn.transaction()?;
+        let mut changed = 0;
+
+        for update in updates {
+            changed += apply_cell_update(&transaction, *update)?;
         }
 
-        let sql = format!(
-            "update {}.{} set {} = ? where {}",
-            quote_identifier(update.schema),
-            quote_identifier(update.table),
-            quote_identifier(update.column),
-            filters.join(" and ")
-        );
-        let changed = conn
-            .execute(&sql, params_from_iter(values.iter()))
-            .context("failed to update SQLite cell")?;
+        transaction.commit()?;
         Ok(json!({ "affected_rows": changed }))
     }
 
@@ -148,6 +142,32 @@ fn column_meta(
             nullable: item["nullable"].as_bool().unwrap_or(true),
         })
         .ok_or_else(|| anyhow!("unknown column {schema}.{table}.{column}"))
+}
+
+fn apply_cell_update(conn: &SqliteConnection, update: CellUpdate<'_>) -> Result<usize> {
+    if update.pk.is_empty() {
+        return Err(anyhow!("cell update requires a primary key"));
+    }
+
+    let target = column_meta(conn, update.schema, update.table, update.column)?;
+    let mut values = vec![validated_value(update.value, &target)?];
+    let mut filters = Vec::new();
+
+    for (column, value) in update.pk {
+        let meta = column_meta(conn, update.schema, update.table, column)?;
+        values.push(validated_value(value, &meta)?);
+        filters.push(format!("{} is ?", quote_identifier(column)));
+    }
+
+    let sql = format!(
+        "update {}.{} set {} = ? where {}",
+        quote_identifier(update.schema),
+        quote_identifier(update.table),
+        quote_identifier(update.column),
+        filters.join(" and ")
+    );
+    conn.execute(&sql, params_from_iter(values.iter()))
+        .context("failed to update SQLite cell")
 }
 
 fn collect_query(conn: &SqliteConnection, sql: &str, values: Vec<Value>) -> Result<QueryOutput> {

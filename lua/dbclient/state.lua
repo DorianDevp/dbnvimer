@@ -109,6 +109,11 @@ function M.update_cell(schema, table_name, column, value, pk)
   return adapter.update_cell(handle, schema, table_name, column, value, pk)
 end
 
+function M.update_cells(updates)
+  local adapter, handle = M.ensure_connected()
+  return adapter.update_cells(handle, updates)
+end
+
 function M.query(sql)
   local adapter, handle = M.ensure_connected()
   return adapter.query(handle, sql)

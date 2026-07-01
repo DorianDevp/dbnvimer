@@ -1,7 +1,7 @@
 use crate::adapter::{CellUpdate, Connection, DbAdapter, QueryOutput};
 use anyhow::{anyhow, Context, Result};
 use mysql::prelude::Queryable;
-use mysql::{OptsBuilder, Params, Pool, Row, Value};
+use mysql::{OptsBuilder, Params, Pool, Row, TxOpts, Value};
 use serde_json::{json, Value as JsonValue};
 
 pub struct MariaDbAdapter;
@@ -99,32 +99,26 @@ impl DbAdapter for MariaDbAdapter {
     }
 
     fn update_cell(&self, connection: &Connection, update: CellUpdate<'_>) -> Result<JsonValue> {
-        if update.pk.is_empty() {
-            return Err(anyhow!("cell update requires a primary key"));
-        }
-
         let mut conn = mysql_connection(connection)?;
-        let target = column_meta(&mut conn, update.schema, update.table, update.column)?;
-        let mut params = vec![validated_value(update.value, &target)?];
-        let mut filters = Vec::new();
+        let changed = apply_cell_update(&mut conn, update)?;
+        Ok(json!({ "affected_rows": changed }))
+    }
 
-        for (pk_column, pk_value) in update.pk {
-            let meta = column_meta(&mut conn, update.schema, update.table, pk_column)?;
-            params.push(validated_value(pk_value, &meta)?);
-            filters.push(format!("{} <=> ?", quote_identifier(pk_column)));
+    fn update_cells(
+        &self,
+        connection: &Connection,
+        updates: &[CellUpdate<'_>],
+    ) -> Result<JsonValue> {
+        let mut conn = mysql_connection(connection)?;
+        let mut transaction = conn.start_transaction(TxOpts::default())?;
+        let mut changed = 0;
+
+        for update in updates {
+            changed += apply_cell_update(&mut transaction, *update)?;
         }
 
-        let sql = format!(
-            "update {}.{} set {} = ? where {} limit 1",
-            quote_identifier(update.schema),
-            quote_identifier(update.table),
-            quote_identifier(update.column),
-            filters.join(" and ")
-        );
-        conn.exec_drop(sql, Params::Positional(params))
-            .context("failed to update cell")?;
-
-        Ok(json!({ "affected_rows": conn.affected_rows() }))
+        transaction.commit()?;
+        Ok(json!({ "affected_rows": changed }))
     }
 
     fn query(&self, connection: &Connection, sql: &str) -> Result<QueryOutput> {
@@ -181,8 +175,8 @@ struct ColumnMeta {
     nullable: bool,
 }
 
-fn column_meta(
-    conn: &mut mysql::PooledConn,
+fn column_meta<C: Queryable>(
+    conn: &mut C,
     schema: &str,
     table: &str,
     column: &str,
@@ -201,6 +195,34 @@ fn column_meta(
         nullable: nullable == "YES",
     })
     .ok_or_else(|| anyhow!("unknown column {schema}.{table}.{column}"))
+}
+
+fn apply_cell_update<C: Queryable>(conn: &mut C, update: CellUpdate<'_>) -> Result<u64> {
+    if update.pk.is_empty() {
+        return Err(anyhow!("cell update requires a primary key"));
+    }
+
+    let target = column_meta(conn, update.schema, update.table, update.column)?;
+    let mut params = vec![validated_value(update.value, &target)?];
+    let mut filters = Vec::new();
+
+    for (pk_column, pk_value) in update.pk {
+        let meta = column_meta(conn, update.schema, update.table, pk_column)?;
+        params.push(validated_value(pk_value, &meta)?);
+        filters.push(format!("{} <=> ?", quote_identifier(pk_column)));
+    }
+
+    let sql = format!(
+        "update {}.{} set {} = ? where {} limit 1",
+        quote_identifier(update.schema),
+        quote_identifier(update.table),
+        quote_identifier(update.column),
+        filters.join(" and ")
+    );
+    let result = conn
+        .exec_iter(sql, Params::Positional(params))
+        .context("failed to update cell")?;
+    Ok(result.affected_rows())
 }
 
 fn validated_value(value: &JsonValue, meta: &ColumnMeta) -> Result<Value> {
