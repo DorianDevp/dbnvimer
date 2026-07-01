@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Added data-buffer cell transaction editing: `i` stages edits, `T` reviews
+  pending changes, and commits apply all staged updates in one backend
+  transaction.
+- Added immediate data-buffer cell editing on `I`, with `E` kept as an
+  immediate-update alias.
+- Added `update-cells` support to the Rust core and Lua adapters for MariaDB,
+  PostgreSQL, and SQLite.
+- Changed cell edit popups to start empty while showing the old value in the
+  title, avoiding accidental old-plus-new submissions for date values.
+- Fixed cell edit submission so Neovim returns to normal mode after accepting
+  an edit from insert mode.
+- Documented `NULL` input handling for cell edits.
+
 ## 0.1.0 - Initial implementation
 
 - Initialized the plugin as MIT-licensed software.

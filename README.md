@@ -138,10 +138,23 @@ SQLite uses `path` for the database file. PostgreSQL supports the same optional
 - `r` refreshes schemas and tables.
 - `e` opens a query buffer for the active connection.
 - `F` toggles fullscreen for DBClient windows.
-- In data buffers, `]c` / `[c` move cells, `]r` / `[r` move rows, and `E` edits the current cell.
+- In data buffers, `]c` / `[c` move cells, `]r` / `[r` move rows, `i` stages a cell edit in a transaction, `I` / `E` updates a cell immediately, and `T` reviews pending transaction changes.
 - `<leader>dq` executes SQL from a query buffer.
 - `<C-CR>` executes SQL from normal or insert mode in a query buffer.
 - `<leader>dc` opens the connection picker.
+
+## Data Buffer Cell Editing
+
+Cell updates require a primary key. In a data buffer, press `i` on a cell to
+open an empty edit popup and stage the new value in a pending transaction. Press
+`T` to review staged changes, then `c` to commit them in one backend
+transaction, `r` to rollback the local changes, or `q` / `<Esc>` to keep
+editing.
+
+Press `I` or `E` to edit the current cell and execute the update immediately.
+The edit popup starts empty and shows the old value in the popup title. To set a
+SQL `NULL`, enter `NULL` without quotes. For date and datetime values, enter the
+raw scalar value, for example `2025-05-29` or `2025-05-29 00:00:00`.
 
 ## Adapter Shape
 
@@ -162,6 +175,7 @@ Each adapter returns a table with:
 - `routines(handle, schema)`
 - `preview(handle, schema, table, limit)`
 - `update_cell(handle, schema, table, column, value, pk)`
+- `update_cells(handle, updates)`
 - `query(handle, sql)`
 
 This keeps DB-specific code outside the UI and lets new adapters remain lazy.

@@ -109,9 +109,18 @@ Data buffers:
 [c          Move to the previous cell.
 ]r          Move to the next row.
 [r          Move to the previous row.
-E           Edit the current cell. Updates require a primary key.
+i           Stage a cell edit in a pending transaction.
+I           Edit the current cell and update the database immediately.
+E           Edit the current cell and update the database immediately.
+T           Review pending transaction changes. Use c to commit, r to rollback,
+            or q/Esc to keep editing.
 r           Reload the table preview.
 F           Toggle fullscreen.
+
+Cell edit popups start empty and show the old value in the popup title. Type
+the replacement scalar value and press <CR>. To set SQL NULL, type NULL without
+quotes. For date and datetime columns, type the raw value, such as
+2025-05-29 or 2025-05-29 00:00:00.
 
 Global:
 <leader>dc  Pick a configured connection.
@@ -160,6 +169,7 @@ Each adapter returns:
   routines(handle, schema) -> table[]
   preview(handle, schema, table, limit) -> result
   update_cell(handle, schema, table, column, value, pk) -> result
+  update_cells(handle, updates) -> result
   query(handle, sql) -> result
 <
 
