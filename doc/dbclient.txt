@@ -25,10 +25,26 @@ more real database testing lands.
 SETUP                                                   *dbclient-setup*
 
 >
+  {
+    "DorianDevp/dbnvimer",
+  }
+<
+
+DBClient ships a bundled dbclient-core binary in bin/ and uses it by default
+when it matches the current OS and CPU architecture.
+
+Bundled binary names:
+>
+  bin/dbclient-core-linux-x86_64
+  bin/dbclient-core-linux-aarch64
+  bin/dbclient-core-macos-x86_64
+  bin/dbclient-core-macos-aarch64
+  bin/dbclient-core-windows-x86_64.exe
+<
+
+Configure connections with:
+>
   require("dbclient").setup({
-    core = {
-      command = vim.fn.getcwd() .. "/rust/dbclient-core/target/release/dbclient-core",
-    },
     connections = {
       local_mariadb = {
         adapter = "mariadb",
@@ -54,10 +70,12 @@ SETUP                                                   *dbclient-setup*
   })
 <
 
-Build the Rust core first:
+If your platform does not have a bundled binary yet, build the Rust core:
 >
   cargo build --release --manifest-path rust/dbclient-core/Cargo.toml
 <
+
+Then set core.command in setup() to the built executable.
 
 ==============================================================================
 COMMANDS                                                *dbclient-commands*

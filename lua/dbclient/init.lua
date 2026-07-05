@@ -9,9 +9,9 @@ local M = {}
 function M.setup(opts)
   config.setup(opts)
 
-  vim.api.nvim_create_user_command("DBClient", M.open, {})
-  vim.api.nvim_create_user_command("DBClientQuery", query.execute, { range = true })
-  vim.api.nvim_create_user_command("DBClientQueryTab", query.open, {})
+  vim.api.nvim_create_user_command("DBClient", M.open, { force = true })
+  vim.api.nvim_create_user_command("DBClientQuery", query.execute, { range = true, force = true })
+  vim.api.nvim_create_user_command("DBClientQueryTab", query.open, { force = true })
   vim.api.nvim_create_user_command("DBClientData", function(args)
     local parts = vim.split(args.args, ".", { plain = true })
     if #parts ~= 2 then
@@ -19,12 +19,13 @@ function M.setup(opts)
       return
     end
     data.open(parts[1], parts[2])
-  end, { nargs = 1 })
-  vim.api.nvim_create_user_command("DBClientClose", M.close, {})
+  end, { nargs = 1, force = true })
+  vim.api.nvim_create_user_command("DBClientClose", M.close, { force = true })
   vim.api.nvim_create_user_command("DBClientConnect", function(args)
     M.connect(args.args)
   end, {
     nargs = 1,
+    force = true,
     complete = function()
       return state.connection_names()
     end,

@@ -46,32 +46,54 @@ kept beside the PNGs so the captures stay reviewable and easy to regenerate.
 ## Requirements
 
 - Neovim 0.10 or newer.
-- Rust stable toolchain.
 - `ssh` on `PATH` when using SSH tunnels.
 - MariaDB, PostgreSQL, or SQLite access from the local machine or through SSH
   forwarding where supported by the adapter.
 
-## Build
+## Installation
+
+With `lazy.nvim`:
+
+```lua
+{
+  "DorianDevp/dbnvimer",
+}
+```
+
+DBClient.nvim ships a bundled `dbclient-core` binary in `bin/` and uses it by
+default when it matches the current OS and CPU architecture.
+
+Bundled binary names:
+
+- `bin/dbclient-core-linux-x86_64`
+- `bin/dbclient-core-linux-aarch64`
+- `bin/dbclient-core-macos-x86_64`
+- `bin/dbclient-core-macos-aarch64`
+- `bin/dbclient-core-windows-x86_64.exe`
+
+## Manual Core Build
+
+If your platform does not have a bundled binary yet, install a Rust stable
+toolchain and build the core manually:
 
 ```sh
 cargo build --release --manifest-path rust/dbclient-core/Cargo.toml
 ```
 
-The binary is written to:
+Then point DBClient at the built binary in `setup()`:
 
-```text
-rust/dbclient-core/target/release/dbclient-core
+```lua
+require("dbclient").setup({
+  core = {
+    command = vim.fn.stdpath("data") .. "/lazy/dbnvimer/rust/dbclient-core/target/release/dbclient-core",
+  },
+})
 ```
-
-You can override the path in `setup()`.
 
 ## Setup
 
 ```lua
 require("dbclient").setup({
-  core = {
-    command = vim.fn.getcwd() .. "/rust/dbclient-core/target/release/dbclient-core",
-  },
   connections = {
     local_mariadb = {
       adapter = "mariadb",
@@ -203,3 +225,17 @@ It expects a MariaDB instance on `127.0.0.1:13306` with the sample `shop`
 schema used for the captures, then drives DBClient in headless Neovim and
 rewrites `docs/screenshots/*.svg`. PNG copies are rendered from those SVGs with
 `rsvg-convert`.
+
+## Bundled Binary Release
+
+Run the `Bundle core binaries` GitHub Actions workflow manually before tagging a
+release. It builds `dbclient-core` on Linux, macOS, and Windows runners, copies
+the outputs into `bin/`, and commits changed binaries back to the repository.
+
+After the workflow commit lands:
+
+```sh
+git pull
+git tag v0.1.0
+git push origin v0.1.0
+```

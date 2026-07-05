@@ -1,0 +1,90 @@
+name: Bundle core binaries
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.output }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            output: dbclient-core-linux-x86_64
+            executable: dbclient-core
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            output: dbclient-core-linux-aarch64
+            executable: dbclient-core
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            output: dbclient-core-macos-x86_64
+            executable: dbclient-core
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            output: dbclient-core-macos-aarch64
+            executable: dbclient-core
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            output: dbclient-core-windows-x86_64.exe
+            executable: dbclient-core.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --manifest-path rust/dbclient-core/Cargo.toml --target ${{ matrix.target }}
+
+      - name: Stage binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "rust/dbclient-core/target/${{ matrix.target }}/release/${{ matrix.executable }}" "dist/${{ matrix.output }}"
+          chmod +x "dist/${{ matrix.output }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.output }}
+          path: dist/${{ matrix.output }}
+          if-no-files-found: error
+
+  commit:
+    name: Commit bundled binaries
+    runs-on: ubuntu-24.04
+    needs: build
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: bundled-core
+
+      - name: Update bin directory
+        shell: bash
+        run: |
+          mkdir -p bin
+          find bundled-core -type f -name 'dbclient-core-*' -exec cp {} bin/ \;
+          chmod +x bin/dbclient-core-*
+
+      - name: Commit binaries
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bin
+          if git diff --cached --quiet; then
+            echo "Bundled binaries are already up to date."
+          else
+            git commit -m "Bundle dbclient-core binaries"
+            git push
+          fi
