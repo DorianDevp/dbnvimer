@@ -1,0 +1,27 @@
+/* Small additions to mdBook's own theme. The book should look like the rest
+   of the Rust documentation it is modelled on, so this is deliberately thin:
+   tables that line up, and terminal output that reads as terminal output. */
+
+.content table {
+  font-variant-numeric: tabular-nums;
+  margin: 1em 0;
+}
+
+.content table td:first-child {
+  white-space: nowrap;
+}
+
+.content code {
+  font-variant-ligatures: none;
+}
+
+.content kbd {
+  font-size: 0.85em;
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+}
+
+/* A table immediately after a paragraph is usually its continuation. */
+.content p + table {
+  margin-top: 0.6em;
+}

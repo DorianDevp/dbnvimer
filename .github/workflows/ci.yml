@@ -61,6 +61,22 @@ jobs:
       - name: Documentation is generated from the mapping table
         run: nvim --headless -u NONE -c "luafile scripts/generate_docs.lua" -- --check
 
+  book:
+    name: The book builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: peaceiris/actions-mdbook@v2
+        with:
+          mdbook-version: latest
+
+      # `create-missing = false`, so a SUMMARY entry with no file fails here
+      # rather than silently producing an empty page.
+      - name: Build
+        run: mdbook build docs
+
   databases:
     name: Adapters against real servers
     runs-on: ubuntu-latest

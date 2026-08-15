@@ -1,0 +1,27 @@
+[book]
+title = "DBClient.nvim"
+authors = ["DBClient.nvim contributors"]
+description = "A database client that behaves like the editor it lives in."
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+create-missing = false
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "ayu"
+no-section-label = false
+git-repository-url = "https://github.com/DorianDevp/dbnvimer"
+edit-url-template = "https://github.com/DorianDevp/dbnvimer/edit/master/docs/{path}"
+additional-css = ["theme/dbclient.css"]
+
+[output.html.fold]
+enable = true
+level = 1
+
+[output.html.search]
+enable = true
+limit-results = 20
+use-boolean-and = true

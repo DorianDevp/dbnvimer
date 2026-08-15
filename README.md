@@ -39,6 +39,20 @@ always one line.
 
 ![A query buffer and its results](docs/screenshots/query-buffer.png)
 
+## The book
+
+The full manual — every procedure from a cold start, with a page per idea —
+lives in [`docs/`](docs/src/SUMMARY.md) and builds with
+[mdBook](https://rust-lang.github.io/mdBook/):
+
+```console
+$ cargo install mdbook
+$ mdbook serve docs --open
+```
+
+Its key and command references are generated from the same table that
+registers the mappings, so they cannot disagree with what is bound.
+
 ## Status
 
 Early software under active development, built with AI-assisted rapid

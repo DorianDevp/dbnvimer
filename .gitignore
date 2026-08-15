@@ -3,3 +3,6 @@ bin/*
 !bin/.gitkeep
 *.swp
 .DS_Store
+
+# mdBook output; `mdbook build docs` regenerates it.
+docs/book/
