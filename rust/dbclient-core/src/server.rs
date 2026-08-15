@@ -178,7 +178,7 @@ fn dispatch(request: Request, writer: &Writer, registry: &Arc<Mutex<Registry>>) 
                 if let Some(busy) = &busy {
                     busy.fetch_add(1, Ordering::SeqCst);
                 }
-                let result = handle_session_op(&request, session);
+                let result = handle_session_op(&request, session, &writer);
                 if let Some(busy) = &busy {
                     busy.fetch_sub(1, Ordering::SeqCst);
                 }
@@ -463,7 +463,11 @@ fn handle_global_op(request: &Request, registry: &Arc<Mutex<Registry>>) -> Resul
 }
 
 /// Operations that run on the session thread.
-fn handle_session_op(request: &Request, session: &mut dyn DbSession) -> Result<JsonValue> {
+fn handle_session_op(
+    request: &Request,
+    session: &mut dyn DbSession,
+    writer: &Writer,
+) -> Result<JsonValue> {
     let params = &request.params;
 
     match request.op.as_str() {
@@ -578,6 +582,25 @@ fn handle_session_op(request: &Request, session: &mut dyn DbSession) -> Result<J
                 "sql": rows_sql,
                 "result": preview,
             }))
+        }
+        "export" => {
+            let spec: crate::export::ExportSpec =
+                serde_json::from_value(params.clone()).context("invalid export specification")?;
+
+            let session_id = request.session.clone().unwrap_or_default();
+            let progress_writer = writer.clone();
+
+            // Progress is a stream of events rather than a reply, so a long
+            // export can report itself without holding up the request.
+            let outcome = crate::export::run(session, &spec, |rows| {
+                progress_writer.send(event_frame(
+                    "export-progress",
+                    Some(&session_id),
+                    json!({ "rows": rows }),
+                ));
+            })?;
+
+            Ok(serde_json::to_value(outcome)?)
         }
         "explain" => {
             let sql = string_param(request, "sql")?;

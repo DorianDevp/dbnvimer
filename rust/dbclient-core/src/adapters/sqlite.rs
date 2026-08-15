@@ -8,7 +8,7 @@ use crate::protocol::{
 };
 use crate::session::{
     clamp_limit, classify, elapsed_ms, encode_binary, inline_placeholders, validate_filter, Access,
-    BackendInfo, CancelHandle, ConnectionSpec, DbSession, DdlKind, ValidationError,
+    BackendInfo, BatchSink, CancelHandle, ConnectionSpec, DbSession, DdlKind, ValidationError,
 };
 use crate::sqlparse;
 use anyhow::{anyhow, Context, Result};
@@ -557,6 +557,56 @@ impl DbSession for SqliteSession {
         }
     }
 
+    fn stream_query(&mut self, sql: &str, batch_size: usize, sink: BatchSink<'_>) -> Result<u64> {
+        self.enforce_access(sql)?;
+
+        let mut statement = self
+            .conn
+            .prepare(sql)
+            .with_context(|| format!("failed to prepare: {}", first_line(sql)))?;
+
+        let width = statement.column_count();
+        let columns = statement
+            .columns()
+            .iter()
+            .map(|column| {
+                let type_name = column.decl_type().unwrap_or("").to_string();
+                let class = if type_name.is_empty() {
+                    ValueClass::Unknown
+                } else {
+                    classify(&type_name)
+                };
+                ColumnDesc::new(column.name(), type_name, class)
+            })
+            .collect::<Vec<_>>();
+
+        let mut cursor = statement.query([]).context("failed to execute query")?;
+        let mut batch: Vec<Vec<JsonValue>> = Vec::with_capacity(batch_size);
+        let mut total = 0u64;
+
+        while let Some(row) = cursor.next()? {
+            let mut values = Vec::with_capacity(width);
+            for index in 0..width {
+                values.push(value_to_json(row.get_ref(index)?));
+            }
+            batch.push(values);
+            total += 1;
+
+            if batch.len() >= batch_size && !sink(&columns, std::mem::take(&mut batch))? {
+                return Ok(total);
+            }
+        }
+
+        if !batch.is_empty() {
+            sink(&columns, batch)?;
+        } else if total == 0 {
+            // Let the writer emit a header even for an empty result.
+            sink(&columns, Vec::new())?;
+        }
+
+        Ok(total)
+    }
+
     fn explain(&mut self, sql: &str, _analyze: bool) -> Result<JsonValue> {
         let output = self.run(&format!("explain query plan {sql}"), &[])?;
         Ok(json!({ "format": "table", "table": {
@@ -834,6 +884,10 @@ impl DbSession for SqliteSession {
 
     fn cancel_handle(&mut self) -> CancelHandle {
         CancelHandle::Sqlite(self.conn.get_interrupt_handle())
+    }
+
+    fn dialect(&self) -> &'static str {
+        "sqlite"
     }
 
     fn access(&self) -> Access {

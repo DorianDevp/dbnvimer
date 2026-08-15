@@ -4,7 +4,9 @@
 //! connection alive so the front end gets real transactions, session variables,
 //! server side cancellation and a stable backend process id.
 
-use crate::protocol::{ApplyOutcome, PreviewParams, QueryOutput, RowChange, ValueClass};
+use crate::protocol::{
+    ApplyOutcome, ColumnDesc, PreviewParams, QueryOutput, RowChange, ValueClass,
+};
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -84,6 +86,9 @@ pub struct ValidationError {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub position: Option<u32>,
 }
+
+/// Callback fed each batch of streamed rows; returning `false` stops the scan.
+pub type BatchSink<'a> = &'a mut dyn FnMut(&[ColumnDesc], Vec<Vec<JsonValue>>) -> Result<bool>;
 
 /// Static facts about the server behind a session.
 #[derive(Clone, Debug, Serialize)]
@@ -165,6 +170,14 @@ pub trait DbSession: Send {
     fn count(&mut self, params: &PreviewParams) -> Result<u64>;
     fn query(&mut self, sql: &str, limit: Option<u64>) -> Result<QueryOutput>;
 
+    /// Run a statement and hand its rows to `sink` in batches.
+    ///
+    /// Export exists to move more rows than fit in memory, so it cannot go
+    /// through `query`, which collects everything first. The sink returns
+    /// `false` to stop early — that is how cancellation reaches a running
+    /// export — and the total number of rows delivered comes back.
+    fn stream_query(&mut self, sql: &str, batch_size: usize, sink: BatchSink<'_>) -> Result<u64>;
+
     /// Ask the server whether a statement is valid, without running it.
     ///
     /// Preparing and discarding is the only way to get the server's own opinion
@@ -196,6 +209,11 @@ pub trait DbSession: Send {
     }
 
     fn access(&self) -> Access;
+
+    /// Which SQL dialect this session speaks, for identifier quoting and for
+    /// generated DDL. A value rather than a method on `&self` so callers can
+    /// read it before taking the session mutably.
+    fn dialect(&self) -> &'static str;
 
     /// Reject statements the session's access level does not allow.
     fn enforce_access(&self, sql: &str) -> Result<()> {

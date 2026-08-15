@@ -332,6 +332,7 @@ Available everywhere; prefixed with `g:dbclient_leader` (default
     <leader>dA       audit the schema for problems
     <leader>dg       chart the current result set
     <leader>dR       show what the statement would change
+    <leader>de       export a table or the last result
 
 SIDEBAR
 
@@ -352,6 +353,7 @@ Object tree: connections, schemas, tables, columns and routines.
     gA               audit this schema
     gG               generate code from this table
     gI               import a CSV into this table
+    gE               export this table
     gy               yank the qualified object name
     a                add a connection
     c                edit the connection
@@ -399,6 +401,7 @@ key.
     gD               open the DDL for this table
     gG               generate code from this table
     gI               import a CSV into this table
+    ge               export this table
     ]c               next cell
     [c               previous cell
     ]r               next row
@@ -459,6 +462,19 @@ else.
     q                close the browser
     g?               show this help
 
+EXPORT EDITOR
+
+Every export setting as text in a buffer: edit it, `:w` runs it. A preset
+sets the settings that only make sense together — "for Excel" means a BOM
+*and* CRLF *and* a semicolon when the locale writes `1,5`.
+
+    gp               apply a preset
+    gP               preview without writing anything
+    gs               save these settings as a preset
+    gr               run the export
+    q                close without exporting
+    g?               show this help
+
 RESULT BUFFER
 
 Read-only grid. `:w name.csv` exports; the format follows the extension.
@@ -467,7 +483,7 @@ Read-only grid. `:w name.csv` exports; the format follows the extension.
     gs               statistics for this column
     gt               transposed view of this row
     gy               yank cell, row or selection as...
-    ge               export the result set
+    ge               export: formats, encodings, partitioning
     gg               chart these rows
     gS               save this result set as a snapshot
     gV               compare with a saved snapshot

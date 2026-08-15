@@ -5,7 +5,7 @@ use crate::protocol::{
 };
 use crate::session::{
     clamp_limit, classify, elapsed_ms, encode_binary, inline_placeholders, validate_filter, Access,
-    BackendInfo, CancelHandle, ConnectionSpec, DbSession, DdlKind, ValidationError,
+    BackendInfo, BatchSink, CancelHandle, ConnectionSpec, DbSession, DdlKind, ValidationError,
 };
 use crate::sqlparse;
 use anyhow::{anyhow, Context, Result};
@@ -677,6 +677,61 @@ impl DbSession for MariaDbSession {
         }
     }
 
+    fn stream_query(&mut self, sql: &str, batch_size: usize, sink: BatchSink<'_>) -> Result<u64> {
+        self.enforce_access(sql)?;
+
+        let mut result = self
+            .conn
+            .exec_iter(sql, Params::Empty)
+            .context("failed to execute query")?;
+
+        let columns = result
+            .columns()
+            .as_ref()
+            .iter()
+            .map(|column| {
+                let type_name = mysql_type_name(column);
+                ColumnDesc::new(
+                    column.name_str().into_owned(),
+                    &type_name,
+                    classify(&type_name),
+                )
+            })
+            .collect::<Vec<_>>();
+        let binary_flags = result
+            .columns()
+            .as_ref()
+            .iter()
+            .map(is_binary_column)
+            .collect::<Vec<_>>();
+        let types = result
+            .columns()
+            .as_ref()
+            .iter()
+            .map(|column| column.column_type())
+            .collect::<Vec<_>>();
+
+        let mut batch: Vec<Vec<JsonValue>> = Vec::with_capacity(batch_size);
+        let mut total = 0u64;
+
+        for row in result.by_ref() {
+            batch.push(row_to_json(row?, columns.len(), &binary_flags, &types));
+            total += 1;
+
+            if batch.len() >= batch_size && !sink(&columns, std::mem::take(&mut batch))? {
+                return Ok(total);
+            }
+        }
+
+        if !batch.is_empty() {
+            sink(&columns, batch)?;
+        } else if total == 0 {
+            sink(&columns, Vec::new())?;
+        }
+
+        Ok(total)
+    }
+
     fn explain(&mut self, sql: &str, analyze: bool) -> Result<JsonValue> {
         if analyze {
             self.enforce_access(sql)?;
@@ -1042,6 +1097,10 @@ impl DbSession for MariaDbSession {
             opts: Box::new(self.opts.clone()),
             connection_id: self.conn.connection_id(),
         }
+    }
+
+    fn dialect(&self) -> &'static str {
+        "mariadb"
     }
 
     fn access(&self) -> Access {

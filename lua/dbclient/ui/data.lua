@@ -1011,6 +1011,25 @@ function M.import()
   })
 end
 
+function M.export()
+  local view = M.view()
+  if not view then
+    return
+  end
+  require("dbclient.export.ui").open({
+    session_id = view.session_id,
+    schema = view.schema,
+    table = view.table,
+    values = vim.tbl_extend("force", require("dbclient.export.spec").defaults(), {
+      -- Carry the view across, so what you exported is what you were looking at.
+      filter = view.filter or "",
+      order = (view.sort and view.sort[1])
+          and ("%s %s"):format(view.sort[1].column, view.sort[1].dir)
+        or "",
+    }),
+  })
+end
+
 function M.open_ddl()
   local view = M.view()
   if not view then
@@ -1048,6 +1067,7 @@ function M.handlers()
     open_ddl = M.open_ddl,
     generate = M.generate,
     import = M.import,
+    export = M.export,
     follow_reverse = M.follow_reverse,
     trail_back = function()
       trail.back()

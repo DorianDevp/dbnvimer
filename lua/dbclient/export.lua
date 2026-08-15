@@ -1,7 +1,11 @@
 --- Yanking and exporting result sets.
 ---
---- Everything here produces plain text, so it lands in a register, a file, or
---- a shell pipeline without a dialog in sight.
+--- Two paths, deliberately: this module renders what is already in a buffer,
+--- for registers, pipes and notebooks, where the data is small and in memory
+--- anyway. Writing a *file* goes through the core instead
+--- (`dbclient.export.ui`), because that path streams from a cursor and can
+--- therefore export more rows than fit in memory — and because that is where
+--- the encoding, NULL and locale decisions belong.
 
 local config = require("dbclient.config")
 local grid = require("dbclient.ui.grid")
@@ -166,7 +170,10 @@ function M.format_for(path)
   return M.formats[extension and extension:lower() or ""] or "table"
 end
 
---- Write a result set to a file.
+--- Write the rows already in a buffer straight to a file.
+---
+--- The quick path behind `:w report.csv`: no streaming, no options, just the
+--- rows on screen. Anything that needs choices goes through the export editor.
 ---@param data table
 ---@param path string
 ---@return boolean ok, string|nil err
@@ -185,24 +192,20 @@ function M.write_file(data, path)
   return true
 end
 
---- Prompt for a destination and export.
----@param data table
+--- Open the export editor for a result set or a table.
+---
+--- Everything about how the bytes are written lives there, because the answer
+--- is never one setting: "for Excel" means a BOM and CRLF and a semicolon, and
+--- a wizard that asks those one at a time is how the file ends up wrong.
+---@param data table  the result view, or `{ table = ..., schema = ... }`
 function M.export(data)
-  local suggested = ("%s/%s.csv"):format(
-    config.get().export.dir,
-    (data.table or "result"):gsub("[^%w_]", "_")
-  )
-  vim.ui.input({ prompt = "export to ", default = suggested, completion = "file" }, function(path)
-    if not path or path == "" then
-      return
-    end
-    local ok, err = M.write_file(data, path)
-    if ok then
-      vim.notify(("DBClient: wrote %s (%s)"):format(path, M.format_for(path)))
-    else
-      vim.notify("DBClient: export failed: " .. tostring(err), vim.log.levels.ERROR)
-    end
-  end)
+  data = data or {}
+  require("dbclient.export.ui").open({
+    session_id = data.session_id,
+    sql = data.sql,
+    table = data.table,
+    schema = data.schema,
+  })
 end
 
 local function set_register(lines)

@@ -5,6 +5,7 @@
 //! `:checkhealth`.
 
 mod adapters;
+mod export;
 mod protocol;
 mod server;
 mod session;

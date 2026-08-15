@@ -304,6 +304,25 @@ else
   print("  (no path found)")
 end
 
+-- 8d. The export editor.
+local export_spec = require("dbclient.export.spec")
+local values = export_spec.apply_preset(export_spec.defaults(), "excel")
+values.destination = "~/exports/customers.csv"
+values.table = "customers"
+values.schema = "main"
+
+print("")
+print("── export editor (excel preset applied) " .. string.rep("─", 31))
+for _, text in ipairs(export_spec.render(values, { connection = "shop" })) do
+  print("  " .. text)
+end
+
+print("")
+print("── export presets " .. string.rep("─", 53))
+for _, name in ipairs(export_spec.preset_names()) do
+  print(("  %-14s %s"):format(name, export_spec.presets[name].label))
+end
+
 -- 9. Connection manager rendering.
 vim.cmd("DBClientConnections")
 local manager = vim.fn.bufnr("dbclient://connections")

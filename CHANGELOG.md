@@ -150,6 +150,42 @@ binary will be rejected with a clear message rather than misbehaving.
   breadcrumb sits in the winbar. Navigating from a rewound position drops the
   forward branch, the way a browser does.
 
+### Export
+
+Rebuilt around the parts other clients leave to a checkbox nobody finds. The
+whole specification is an editable buffer written with `:w`, `gP` previews it
+without writing, and presets exist because the settings that matter are not
+independent of each other.
+
+- **NULL survives.** The sentinel is configurable and written bare even under
+  `quoting = all`, so an empty quoted field means an empty string and nothing
+  means NULL. Every other tool renders both as nothing.
+- **Excel actually opens the file.** The `excel` preset sets a UTF-8 BOM *and*
+  CRLF *and* moves the delimiter to `;` when the decimal separator is a comma —
+  which is what Excel itself does in those locales, and what a lone BOM toggle
+  does not fix.
+- **Memory stays flat.** Rows stream from a PostgreSQL cursor or a driver
+  iterator and are written as they arrive; a five million row export costs what
+  five rows cost. Tested at 5 000 rows across batch boundaries on both servers.
+- **A JSON column is inlined**, so the output is one document rather than a
+  document full of escaped documents. `json_columns` names them on backends
+  with no JSON type, rather than guessing from a leading brace.
+- **Every export explains itself.** A sidecar manifest records the statement,
+  the columns and their types, the row count, every setting that changes how
+  the bytes read back, and a SHA-256 per file.
+- **Partitioning** by row count or by the value of a column, so per-day and
+  per-tenant files need no shell loop. Gzip on the way out.
+- **Redaction** masks named columns as they are written, which is the moment it
+  is actually needed.
+- **Real XLSX**, written without a dependency: numbers stay numeric so `SUM`
+  works, `007` keeps its zeros, the header row is frozen.
+- **SQL output** is batched multi-row inserts with an optional transaction,
+  dialect-correct quoting and escaping, and upsert/ignore/replace modes.
+- SHA-256 and CRC-32 are implemented here and checked against the published
+  test vectors, rather than pulled in as dependencies to write a manifest and a
+  zip header. The one new dependency is `flate2` for gzip and for deflating the
+  XLSX container, with its pure-Rust backend so nothing links system zlib.
+
 ### Seeing what a statement will do
 
 - **Blast radius.** Before an `UPDATE` or `DELETE` that would touch more than
@@ -192,8 +228,8 @@ binary will be rejected with a clear message rather than misbehaving.
 
 ### Testing
 
-- 53 Rust unit tests, 213 Lua tests (including an end-to-end suite driving real
-  buffers against a real database), and 40 adapter tests each against a live
+- 102 Rust unit tests, 233 Lua tests (including an end-to-end suite driving real
+  buffers against a real database), and 49 adapter tests each against a live
   PostgreSQL and MariaDB server.
 - `scripts/protocol_smoke.py` exercises the wire protocol over stdio.
 - `scripts/ui_smoke.lua` drives the real UI headlessly and prints every buffer.

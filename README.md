@@ -43,8 +43,8 @@ always one line.
 
 Early software under active development, built with AI-assisted rapid
 development. The core protocol, the editable data buffer and the safety rails
-are covered by tests: 53 Rust, 213 Lua including an end-to-end suite driving
-real buffers, and 40 adapter tests each against a live PostgreSQL and MariaDB
+are covered by tests: 102 Rust, 233 Lua including an end-to-end suite driving
+real buffers, and 49 adapter tests each against a live PostgreSQL and MariaDB
 server. The adapters still want exercising against real production schemas
 before a 1.0.
 
@@ -241,6 +241,8 @@ matters, so several things guard against it:
 | `:DBClientJoin [a b]` | build a join between two tables from the FK graph |
 | `:DBClientAudit[!]` | lint the schema (`!` also reads column statistics) |
 | `:DBClientChart` | chart the current result set |
+| `:DBClientExport [schema.table]` | the export editor |
+| `:DBClientExportPreset` | open a saved export preset |
 | `:DBClientWorkspaceSave` / `Restore` / `Show` / `Clear` | the open tables and queries for this project |
 | `:DBClientHelp` | every mapping in one buffer |
 | `:DBClientRestart` | restart the core |
@@ -290,6 +292,7 @@ Available everywhere; prefixed with `g:dbclient_leader` (default `<leader>d`).
 | `<leader>dA` | audit the schema for problems |
 | `<leader>dg` | chart the current result set |
 | `<leader>dR` | show what the statement would change |
+| `<leader>de` | export a table or the last result |
 
 ### Sidebar
 
@@ -312,6 +315,7 @@ Object tree: connections, schemas, tables, columns and routines.
 | `gA` | audit this schema |
 | `gG` | generate code from this table |
 | `gI` | import a CSV into this table |
+| `gE` | export this table |
 | `gy` | yank the qualified object name |
 | `a` | add a connection |
 | `c` | edit the connection |
@@ -355,6 +359,7 @@ Only navigation and inspection are mapped, so nothing shadows an editing key.
 | `gD` | open the DDL for this table |
 | `gG` | generate code from this table |
 | `gI` | import a CSV into this table |
+| `ge` | export this table |
 | `]c` | next cell |
 | `[c` | previous cell |
 | `]r` | next row |
@@ -414,6 +419,19 @@ Saved queries are `.sql` files with a `-- @name:` header, kept per project and g
 | `q` | close the browser |
 | `g?` | show this help |
 
+### Export editor
+
+Every export setting as text in a buffer: edit it, `:w` runs it. A preset sets the settings that only make sense together — "for Excel" means a BOM *and* CRLF *and* a semicolon when the locale writes `1,5`.
+
+| key | action |
+| --- | --- |
+| `gp` | apply a preset |
+| `gP` | preview without writing anything |
+| `gs` | save these settings as a preset |
+| `gr` | run the export |
+| `q` | close without exporting |
+| `g?` | show this help |
+
 ### Result buffer
 
 Read-only grid. `:w name.csv` exports; the format follows the extension.
@@ -424,7 +442,7 @@ Read-only grid. `:w name.csv` exports; the format follows the extension.
 | `gs` | statistics for this column |
 | `gt` | transposed view of this row |
 | `gy` | yank cell, row or selection as... |
-| `ge` | export the result set |
+| `ge` | export: formats, encodings, partitioning |
 | `gg` | chart these rows |
 | `gS` | save this result set as a snapshot |
 | `gV` | compare with a saved snapshot |
@@ -635,6 +653,42 @@ keyed by working directory. It is saved automatically on exit;
 `:DBClientWorkspaceRestore` brings it back. `:mksession` cannot help here —
 restoring a data buffer means reconnecting and re-running its query, not
 restoring bytes.
+
+## Export
+
+Every client can write a CSV. What they get wrong is everything around it, so
+this part is deliberately opinionated.
+
+`ge` on a result or a table opens the **export editor** — every setting as text
+in a buffer, `:w` runs it, `gP` shows the first lines without writing anything.
+A wizard hides the settings that matter; a buffer shows them all at once and
+saves as a file, which is what turns a one-off into a preset.
+
+| gap in other clients | what happens here |
+| --- | --- |
+| NULL and an empty string both become nothing in CSV | the NULL sentinel is configurable (`\N`, `NULL`, empty) and **written bare even under `quoting = all`**, so `""` means empty and nothing means NULL — and the manifest records which was used |
+| Excel mangles non-ASCII, or splits `1,5` into two columns | the `excel` preset sets a UTF-8 BOM *and* CRLF *and* moves the delimiter to `;` when the decimal separator is a comma. One setting alone does not fix it |
+| the whole result set is loaded into memory | rows stream from a server-side cursor and are written as they arrive, so 5 million rows costs the same memory as 5 |
+| a JSON column is embedded as an escaped string | it is inlined, so the output is one document instead of a document full of documents. `json_columns` names them where the backend has no JSON type |
+| an export is unrepeatable and unexplainable | a sidecar manifest records the statement, columns and types, row count, every setting that affects how the bytes read back, and a SHA-256 per file |
+| one enormous file | split every N rows, or into one file per value of a column — per-day, per-tenant — without a shell loop |
+| no compression | gzip on the way out |
+| sensitive columns go out in the clear | `redact` masks named columns as they are written |
+| numbers become text in a spreadsheet | XLSX is written for real: numbers stay numeric so `SUM` works, `007` stays text, the header row is frozen |
+| you find out it was wrong after writing 2 GB | `gP` previews the first rows, and an existing file is refused unless `overwrite` is set |
+
+Formats: `csv`, `tsv`, `json`, `jsonl`, `markdown`, `html`, `xml`, `sql`, `xlsx`,
+`text`. Presets: `excel`, `csv_strict`, `postgres_copy`, `mysql_load`, `api`,
+`backup`, `spreadsheet`, `report`, `archive`, `share`.
+
+The SQL format is not just `INSERT`: batched multi-row statements, an optional
+surrounding transaction, dialect-correct quoting and escaping, and `upsert` /
+`ignore` / `replace` modes — with `sql_key_columns` for the conflict target,
+because PostgreSQL cannot upsert without one and guessing would be worse than
+saying so.
+
+`:w report.csv` on a result buffer still works for the simple case; the editor
+is for when the details matter.
 
 ## Understanding a schema
 

@@ -398,6 +398,33 @@ local function define_commands()
     query().blast_radius()
   end, { force = true, desc = "Show which rows the statement would change" })
 
+  command("DBClientExport", function(args)
+    local view = require("dbclient.ui.results").view()
+    local target = session.current()
+    if not target then
+      return notify("no active connection", vim.log.levels.WARN)
+    end
+
+    local parts = vim.split(args.args, ".", { plain = true })
+    if #parts == 2 then
+      return require("dbclient.export.ui").open({
+        session_id = target.id,
+        schema = parts[1],
+        table = parts[2],
+      })
+    end
+    require("dbclient.export.ui").open({
+      session_id = target.id,
+      sql = view and view.sql,
+    })
+  end, { nargs = "?", force = true, desc = "Export a table or the last result set" })
+
+  command("DBClientExportPreset", function()
+    require("dbclient.export.ui").load_preset({
+      session_id = session.current() and session.current().id,
+    })
+  end, { force = true, desc = "Open a saved export preset" })
+
   command("DBClientHelp", function()
     require("dbclient.ui.help").show_all()
   end, { force = true })
@@ -626,6 +653,22 @@ local function global_handlers()
     end,
     blast_radius = function()
       query().blast_radius()
+    end,
+    export = function()
+      local view = require("dbclient.ui.results").view()
+      if view then
+        return require("dbclient.export.ui").open({
+          session_id = view.session_id,
+          sql = view.sql,
+        })
+      end
+      pickers.objects_for(function(choice)
+        require("dbclient.export.ui").open({
+          session_id = choice.session_id,
+          schema = choice.schema,
+          table = choice.table,
+        })
+      end)
     end,
     compare = function()
       vim.ui.select({

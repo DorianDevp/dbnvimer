@@ -501,6 +501,18 @@ function M.audit()
   require("dbclient.audit").run({ session_id = node.session_id, schema = node.schema })
 end
 
+function M.export()
+  local node = node_at_cursor()
+  if not node or not node.table then
+    return notify("move onto a table first", vim.log.levels.WARN)
+  end
+  require("dbclient.export.ui").open({
+    session_id = node.session_id,
+    schema = node.schema,
+    table = node.table,
+  })
+end
+
 function M.open_query()
   local node = node_at_cursor()
   local target = node and node.session_id or nil
@@ -670,6 +682,7 @@ function M.open()
     audit = M.audit,
     generate = M.generate,
     import = M.import,
+    export = M.export,
     yank_name = M.yank_name,
     add_connection = M.add_connection,
     edit_connection = M.edit_connection,

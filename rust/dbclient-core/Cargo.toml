@@ -9,6 +9,8 @@ description = "Rust core for DBClient.nvim"
 anyhow = "1.0"
 base64 = "0.22"
 clap = { version = "4.5", features = ["derive"] }
+# Pure-Rust backend: no C zlib to link, no system dependency to install.
+flate2 = { version = "1.0", default-features = false, features = ["rust_backend"] }
 mysql = "25.0"
 postgres = "0.19"
 rusqlite = { version = "0.32", features = ["bundled", "column_decltype"] }

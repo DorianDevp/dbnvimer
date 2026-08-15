@@ -630,6 +630,193 @@ local function suite(adapter, spec)
     end },
   })
 
+  t.describe(adapter .. ": export", {
+    { "streams a large result without loading it", function()
+      run(function()
+        -- Enough rows that a batch boundary is crossed several times, which is
+        -- what exercises the cursor on PostgreSQL and the iterator elsewhere.
+        session.query(target.id, "drop table if exists dbclient_big")
+        session.query(
+          target.id,
+          adapter == "postgres"
+            and "create table dbclient_big (id bigserial primary key, label text, amount numeric(12,2))"
+            or "create table dbclient_big (id bigint auto_increment primary key, label varchar(64), amount decimal(12,2))"
+        )
+        for batch = 0, 4 do
+          local values = {}
+          for index = 1, 1000 do
+            local id = batch * 1000 + index
+            table.insert(values, ("('row %d', %d.25)"):format(id, id))
+          end
+          session.query(
+            target.id,
+            ("insert into dbclient_big (label, amount) values %s"):format(
+              table.concat(values, ",")
+            )
+          )
+        end
+
+        local path = vim.fn.tempname() .. "/big"
+        local outcome = client.call("export", {
+          format = "csv",
+          destination = path,
+          sql = "select id, label, amount from dbclient_big order by id",
+          batch_size = 250,
+          manifest = false,
+        }, target.id)
+
+        t.eq(outcome.rows, 5000)
+        local written = vim.fn.readfile(outcome.files[1].path)
+        t.eq(#written, 5001, "a header plus every row")
+        t.eq(written[1], "id,label,amount")
+        t.matches(written[2], "^1,row 1,1%.25$")
+        t.matches(written[#written], "^5000,row 5000,5000%.25$")
+      end)
+    end },
+
+    { "keeps NULL apart from an empty string and from the text NULL", function()
+      run(function()
+        -- Built in the statement so the test does not depend on what earlier
+        -- steps left in the table: one real NULL, one empty string, and one
+        -- row whose value is the literal text "NULL".
+        local path = vim.fn.tempname() .. "/nulls"
+        local outcome = client.call("export", {
+          format = "csv",
+          destination = path,
+          sql = table.concat({
+            "select 'a' as label, cast(null as char(4)) as value",
+            "union all select 'b', ''",
+            "union all select 'c', 'NULL'",
+          }, " "),
+          null_as = "\\N",
+          manifest = false,
+        }, target.id)
+
+        local written = vim.fn.readfile(outcome.files[1].path)
+        table.sort(written)
+        local text = table.concat(written, "|")
+        t.matches(text, "a,\\N", "a real NULL uses the sentinel")
+        t.matches(text, "b,|", "an empty string stays empty")
+        t.matches(text, "c,NULL", "the literal string NULL is written as itself")
+      end)
+    end },
+
+    { "writes a manifest with a checksum", function()
+      run(function()
+        local path = vim.fn.tempname() .. "/manifest"
+        local outcome = client.call("export", {
+          format = "csv",
+          destination = path,
+          sql = "select id, name from dbclient_items order by id",
+          manifest = true,
+          checksum = true,
+        }, target.id)
+
+        t.ok(outcome.manifest)
+        local manifest = vim.json.decode(
+          table.concat(vim.fn.readfile(outcome.manifest), "\n")
+        )
+        t.eq(manifest.rows, outcome.rows)
+        t.eq(manifest.statement, "select id, name from dbclient_items order by id")
+        t.eq(#manifest.columns, 2)
+        t.matches(manifest.files[1].sha256, "^%x+$")
+        t.eq(#manifest.files[1].sha256, 64)
+      end)
+    end },
+
+    { "partitions by a column value", function()
+      run(function()
+        local path = vim.fn.tempname() .. "/parts"
+        local outcome = client.call("export", {
+          format = "csv",
+          destination = path,
+          sql = "select name, note from dbclient_items",
+          partition_by = "name",
+          manifest = false,
+        }, target.id)
+
+        t.eq(#outcome.files, 2, "one file per distinct value")
+        for _, file in ipairs(outcome.files) do
+          t.ok(file.partition ~= nil)
+          t.eq(file.rows, 1)
+        end
+      end)
+    end },
+
+    { "exports a table with a filter, not just a statement", function()
+      run(function()
+        local path = vim.fn.tempname() .. "/table"
+        local outcome = client.call("export", {
+          format = "jsonl",
+          destination = path,
+          schema = schema,
+          table = "dbclient_items",
+          filter = "name = 'NULL'",
+          manifest = false,
+        }, target.id)
+
+        t.eq(outcome.rows, 1)
+        local line = vim.fn.readfile(outcome.files[1].path)[1]
+        t.eq(vim.json.decode(line).name, "NULL")
+      end)
+    end },
+
+    { "writes an xlsx that unzips", function()
+      run(function()
+        local path = vim.fn.tempname() .. "/book.xlsx"
+        local outcome = client.call("export", {
+          format = "xlsx",
+          destination = path,
+          sql = "select id, name, amount from dbclient_items order by id",
+          manifest = false,
+        }, target.id)
+
+        local bytes = table.concat(vim.fn.readfile(outcome.files[1].path, "b"), "\n")
+        t.matches(bytes:sub(1, 2), "PK", "an xlsx is a zip")
+        t.ok(outcome.files[1].bytes > 500)
+      end)
+    end },
+
+    { "previews without writing anything", function()
+      run(function()
+        local path = vim.fn.tempname() .. "/never.csv"
+        local outcome = client.call("export", {
+          format = "csv",
+          destination = path,
+          sql = "select id, name from dbclient_items",
+          preview = true,
+          preview_rows = 1,
+        }, target.id)
+
+        t.ok(outcome.preview ~= nil)
+        t.eq(vim.fn.filereadable(path), 0, "a preview writes no file")
+      end)
+    end },
+
+    { "refuses to overwrite unless told to", function()
+      run(function()
+        local path = vim.fn.tempname() .. "/once.csv"
+        local settings = {
+          format = "csv",
+          destination = path,
+          sql = "select 1 as one",
+          manifest = false,
+        }
+        client.call("export", settings, target.id)
+        t.falsy(pcall(client.call, "export", settings, target.id))
+
+        settings.overwrite = true
+        t.ok(pcall(client.call, "export", settings, target.id))
+      end)
+    end },
+
+    { "cleans up the big fixture", function()
+      run(function()
+        session.query(target.id, "drop table if exists dbclient_big")
+      end)
+    end },
+  })
+
   t.describe(adapter .. ": safety and cancellation", {
     { "cancels a long running statement", function()
       local finished, failed = false, nil

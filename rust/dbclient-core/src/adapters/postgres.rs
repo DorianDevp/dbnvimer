@@ -13,7 +13,7 @@ use crate::protocol::{
 };
 use crate::session::{
     clamp_limit, classify, elapsed_ms, inline_placeholders, validate_filter, Access, BackendInfo,
-    CancelHandle, ConnectionSpec, DbSession, DdlKind, ValidationError,
+    BatchSink, CancelHandle, ConnectionSpec, DbSession, DdlKind, ValidationError,
 };
 use crate::sqlparse;
 use anyhow::{anyhow, Context, Result};
@@ -593,6 +593,57 @@ impl DbSession for PostgresSession {
         }
     }
 
+    fn stream_query(&mut self, sql: &str, batch_size: usize, sink: BatchSink<'_>) -> Result<u64> {
+        self.enforce_access(sql)?;
+
+        // A cursor is what keeps memory flat: without one the server sends the
+        // whole result and the client buffers it, which is exactly what export
+        // exists to avoid.
+        let columns = self.describe(sql).unwrap_or_default();
+        let opened_transaction = !self.in_transaction;
+        if opened_transaction {
+            self.client.batch_execute("begin")?;
+        }
+
+        let result = (|| -> Result<u64> {
+            self.client
+                .batch_execute(&format!(
+                    "declare dbclient_export no scroll cursor for {sql}"
+                ))
+                .context("failed to open an export cursor")?;
+
+            let mut total = 0u64;
+            let mut described = columns.clone();
+
+            loop {
+                let output =
+                    self.simple(&format!("fetch forward {batch_size} from dbclient_export"))?;
+                if described.is_empty() {
+                    described = output.columns.clone();
+                }
+                let count = output.rows.len() as u64;
+                total += count;
+
+                let last = count < batch_size as u64;
+                if !sink(&described, output.rows)? {
+                    break;
+                }
+                if last {
+                    break;
+                }
+            }
+
+            Ok(total)
+        })();
+
+        let _ = self.client.batch_execute("close dbclient_export");
+        if opened_transaction {
+            let _ = self.client.batch_execute("commit");
+        }
+
+        result
+    }
+
     fn explain(&mut self, sql: &str, analyze: bool) -> Result<JsonValue> {
         if analyze {
             self.enforce_access(sql)?;
@@ -939,6 +990,10 @@ impl DbSession for PostgresSession {
 
     fn cancel_handle(&mut self) -> CancelHandle {
         CancelHandle::Postgres(Box::new(self.client.cancel_token()))
+    }
+
+    fn dialect(&self) -> &'static str {
+        "postgres"
     }
 
     fn access(&self) -> Access {
