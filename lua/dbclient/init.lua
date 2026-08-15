@@ -598,10 +598,15 @@ local function define_autocommands()
   vim.api.nvim_create_autocmd("VimLeavePre", {
     group = group,
     callback = function()
-      -- Capture before tearing down, so there is something to capture.
-      pcall(function()
-        require("dbclient.workspace").save()
-      end)
+      -- Capture before tearing down, so there is something to capture — but
+      -- not from a headless session. A script that opens a connection is not
+      -- a workspace anyone wants restored, and saving one silently overwrites
+      -- whatever a real session left there.
+      if #vim.api.nvim_list_uis() > 0 then
+        pcall(function()
+          require("dbclient.workspace").save()
+        end)
+      end
       require("dbclient.watch").stop_all()
       -- A replication slot left behind holds WAL forever.
       pcall(function()
