@@ -328,6 +328,10 @@ Available everywhere; prefixed with `g:dbclient_leader` (default
     <leader>dS       save the current query
     <leader>d[       back along the navigation trail
     <leader>d]       forward along the navigation trail
+    <leader>dj       build a join between two tables
+    <leader>dA       audit the schema for problems
+    <leader>dg       chart the current result set
+    <leader>dR       show what the statement would change
 
 SIDEBAR
 
@@ -344,6 +348,8 @@ Object tree: connections, schemas, tables, columns and routines.
     gi               list indexes
     gz               table and index sizes
     ge               entity relationship diagram
+    gj               build a join from this table
+    gA               audit this schema
     gG               generate code from this table
     gI               import a CSV into this table
     gy               yank the qualified object name
@@ -428,6 +434,7 @@ comments, dollar quoting and `DELIMITER`.
     <leader>dQ       run every statement in the buffer
     <leader>de       explain the statement
     <leader>dE       explain analyze the statement
+    <leader>dR       show which rows this would change
     K                describe the table or column under the cursor
     gd               open the DDL for the table under the cursor
     gs               save this query
@@ -461,6 +468,7 @@ Read-only grid. `:w name.csv` exports; the format follows the extension.
     gt               transposed view of this row
     gy               yank cell, row or selection as...
     ge               export the result set
+    gg               chart these rows
     gS               save this result set as a snapshot
     gV               compare with a saved snapshot
     g!               pipe the rows through a shell command

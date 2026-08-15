@@ -150,6 +150,32 @@ binary will be rejected with a clear message rather than misbehaving.
   breadcrumb sits in the winbar. Navigating from a rewound position drops the
   forward branch, the way a browser does.
 
+### Seeing what a statement will do
+
+- **Blast radius.** Before an `UPDATE` or `DELETE` that would touch more than
+  one row, the core rewrites it into the equivalent `SELECT` and the rows it
+  would change are shown with the server's own count. The rewrite tracks
+  parenthesis depth and ignores keywords inside literals and comments, and
+  anything it cannot confidently rewrite — a multi-table delete, say — is
+  refused rather than previewed as different rows.
+- **The server validates the SQL.** Each statement is `PREPARE`d and discarded,
+  so unknown columns, wrong types and syntax errors surface as
+  `vim.diagnostic` entries carrying the server's own message and position,
+  without executing anything. A static linter can only guess at names.
+- **`:DBClientJoin`** searches the foreign key graph for a path between two
+  tables and writes the query, aliases and `ON` clauses included. Edges are
+  followed in either direction, several routes are offered when they exist, and
+  the shortest comes first.
+- **`:DBClientAudit`** lints a schema: tables with no primary key, foreign keys
+  with no index behind them, indexes that are a prefix of another, foreign keys
+  whose types disagree. With `!` it also reads column statistics and reports
+  always-null, never-null and single-value columns. Findings go to the quickfix
+  list.
+- **`:DBClientChart`** draws a result set as bars, with a sparkline summary.
+  Negative values sit either side of a zero line rather than being rescaled, and
+  a column whose type the backend never declared is charted anyway when its
+  values are numbers.
+
 ### Workspaces and diagnostics
 
 - **`:DBClientWorkspaceSave` / `Restore`** remember which connections are open,
@@ -166,8 +192,8 @@ binary will be rejected with a clear message rather than misbehaving.
 
 ### Testing
 
-- 43 Rust unit tests, 178 Lua tests (including an end-to-end suite driving real
-  buffers against a real database), and 32 adapter tests each against a live
+- 53 Rust unit tests, 213 Lua tests (including an end-to-end suite driving real
+  buffers against a real database), and 40 adapter tests each against a live
   PostgreSQL and MariaDB server.
 - `scripts/protocol_smoke.py` exercises the wire protocol over stdio.
 - `scripts/ui_smoke.lua` drives the real UI headlessly and prints every buffer.

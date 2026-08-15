@@ -43,8 +43,8 @@ always one line.
 
 Early software under active development, built with AI-assisted rapid
 development. The core protocol, the editable data buffer and the safety rails
-are covered by tests: 43 Rust, 178 Lua including an end-to-end suite driving
-real buffers, and 32 adapter tests each against a live PostgreSQL and MariaDB
+are covered by tests: 53 Rust, 213 Lua including an end-to-end suite driving
+real buffers, and 40 adapter tests each against a live PostgreSQL and MariaDB
 server. The adapters still want exercising against real production schemas
 before a 1.0.
 
@@ -168,6 +168,30 @@ Set `vim.g.dbclient_leader` to change the global prefix from `<leader>d`.
 Running the right statement against the wrong database is the failure mode that
 matters, so several things guard against it:
 
+- **Blast radius.** Before an `UPDATE` or `DELETE` that would touch more than
+  one row, DBClient rewrites it into the equivalent `SELECT` and shows you the
+  rows it is about to change, with the real count from the server:
+
+  ```
+  DELETE would affect 14 823 row(s) on prod
+
+    delete from orders where status = 'pending' and created_at < '2025-01-01'
+
+    id    | customer_id | status  | created_at
+    ------+-------------+---------+-----------
+    10021 | 4           | pending | 2024-11-02
+    …and 14 822 more
+
+    <CR> run it    q cancel
+  ```
+
+  The rewrite is exact rather than clever: anything it cannot confidently
+  rewrite is refused rather than previewed as different rows. `guard
+  .preview_writes_over` sets the threshold; `<leader>dR` asks on demand.
+- **The server checks your SQL, not a guesser.** Each statement is `PREPARE`d
+  and discarded, so unknown columns, wrong types and syntax errors appear as
+  `vim.diagnostic` entries — with the server's own message and position —
+  without anything being executed.
 - A connection with a `color` paints the winbar of **every** buffer bound to it.
 - `access = "read"` is enforced in the Rust core, not in the UI.
 - `access = "sandbox"` executes and rolls back, reporting what would have
@@ -213,6 +237,10 @@ matters, so several things guard against it:
 | `:DBClientUndoLog` | writes DBClient made, and the SQL that undoes them |
 | `:DBClientPipe <cmd>` | pipe the rows through a shell command |
 | `:DBClientIndexes [schema]` | index usage and unused index candidates |
+| `:DBClientBlastRadius` | show which rows the statement would change |
+| `:DBClientJoin [a b]` | build a join between two tables from the FK graph |
+| `:DBClientAudit[!]` | lint the schema (`!` also reads column statistics) |
+| `:DBClientChart` | chart the current result set |
 | `:DBClientWorkspaceSave` / `Restore` / `Show` / `Clear` | the open tables and queries for this project |
 | `:DBClientHelp` | every mapping in one buffer |
 | `:DBClientRestart` | restart the core |
@@ -258,6 +286,10 @@ Available everywhere; prefixed with `g:dbclient_leader` (default `<leader>d`).
 | `<leader>dS` | save the current query |
 | `<leader>d[` | back along the navigation trail |
 | `<leader>d]` | forward along the navigation trail |
+| `<leader>dj` | build a join between two tables |
+| `<leader>dA` | audit the schema for problems |
+| `<leader>dg` | chart the current result set |
+| `<leader>dR` | show what the statement would change |
 
 ### Sidebar
 
@@ -276,6 +308,8 @@ Object tree: connections, schemas, tables, columns and routines.
 | `gi` | list indexes |
 | `gz` | table and index sizes |
 | `ge` | entity relationship diagram |
+| `gj` | build a join from this table |
+| `gA` | audit this schema |
 | `gG` | generate code from this table |
 | `gI` | import a CSV into this table |
 | `gy` | yank the qualified object name |
@@ -355,6 +389,7 @@ A real `sql` buffer, so treesitter, completion and your own mappings apply. Stat
 | `<leader>dQ` | run every statement in the buffer |
 | `<leader>de` | explain the statement |
 | `<leader>dE` | explain analyze the statement |
+| `<leader>dR` | show which rows this would change |
 | `K` | describe the table or column under the cursor |
 | `gd` | open the DDL for the table under the cursor |
 | `gs` | save this query |
@@ -390,6 +425,7 @@ Read-only grid. `:w name.csv` exports; the format follows the extension.
 | `gt` | transposed view of this row |
 | `gy` | yank cell, row or selection as... |
 | `ge` | export the result set |
+| `gg` | chart these rows |
 | `gS` | save this result set as a snapshot |
 | `gV` | compare with a saved snapshot |
 | `g!` | pipe the rows through a shell command |
@@ -599,6 +635,51 @@ keyed by working directory. It is saved automatically on exit;
 `:DBClientWorkspaceRestore` brings it back. `:mksession` cannot help here —
 restoring a data buffer means reconnecting and re-running its query, not
 restoring bytes.
+
+## Understanding a schema
+
+**`:DBClientJoin`** answers "how do I get from `orders` to `countries`" by
+searching the foreign key graph and writing the query:
+
+```sql
+select o.*
+from shop.orders o
+join shop.customers c on c.id = o.customer_id
+join shop.addresses a on a.id = c.address_id
+join shop.countries c2 on c2.id = a.country_id
+limit 100;
+```
+
+Several routes are offered when several exist, shortest first, and edges are
+followed in either direction because a join does not care which side holds the
+key.
+
+**`:DBClientAudit`** lints the schema from metadata that is already cached:
+
+| finding | why it matters |
+| --- | --- |
+| no primary key | rows cannot be addressed individually, so the data buffer is read-only |
+| foreign key with no index | every parent delete becomes a scan |
+| index that is a prefix of another | dead weight, unless it is unique |
+| foreign key whose types disagree | the join will not use an index |
+
+With `!` it also reads column statistics and reports columns that are NULL in
+every row, nullable columns that are never NULL, and columns holding one value.
+Findings go to the quickfix list, so `]q` walks them.
+
+**`:DBClientChart`** draws the current result set:
+
+```
+2026-01  ████████████████████████████████████████████  1 200.50
+2026-02  ███████▊                                        210.00
+2026-03  ██████████████████████████████████████████████ 1 255.25
+
+3 point(s)   min 210   max 1255.25   █▁█
+```
+
+Negative values are drawn either side of a zero line rather than rescaled, and
+a column whose type the backend never declared — `count(*)` in SQLite — is
+charted anyway if its values are numbers.
 
 ## Requirements
 

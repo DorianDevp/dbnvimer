@@ -8,7 +8,7 @@ use crate::protocol::{
 };
 use crate::session::{
     clamp_limit, classify, elapsed_ms, encode_binary, inline_placeholders, validate_filter, Access,
-    BackendInfo, CancelHandle, ConnectionSpec, DbSession, DdlKind,
+    BackendInfo, CancelHandle, ConnectionSpec, DbSession, DdlKind, ValidationError,
 };
 use crate::sqlparse;
 use anyhow::{anyhow, Context, Result};
@@ -545,6 +545,16 @@ impl DbSession for SqliteSession {
             last.rows.truncate(cap as usize);
         }
         Ok(last)
+    }
+
+    fn validate(&mut self, sql: &str) -> Result<Option<ValidationError>> {
+        match self.conn.prepare(sql) {
+            Ok(_) => Ok(None),
+            Err(error) => Ok(Some(ValidationError {
+                message: error.to_string(),
+                position: None,
+            })),
+        }
     }
 
     fn explain(&mut self, sql: &str, _analyze: bool) -> Result<JsonValue> {

@@ -230,6 +230,80 @@ for _, entry in ipairs(queries.list()) do
   queries.delete(entry.path)
 end
 
+-- 8c. Blast radius, charts, the schema audit and the join builder.
+local blast = require("dbclient.blast")
+local report
+require("dbclient.core.client").async(function()
+  report = blast.inspect(target.id, "delete from customers where city = 'PL'")
+end)
+wait(function()
+  return report ~= nil
+end, "blast radius")
+
+print("")
+print("── blast radius " .. string.rep("─", 56))
+for _, text in ipairs((blast.lines(report, {
+  sql = "delete from customers where city = 'PL'",
+  connection = "shop",
+  warnings = {},
+}))) do
+  print("  " .. text)
+end
+
+local chart = require("dbclient.chart")
+local chart_result
+require("dbclient.core.client").async(function()
+  chart_result = session.query(
+    target.id,
+    "select city, count(*) as customers, sum(balance) as balance from customers group by city order by balance desc"
+  )
+end)
+wait(function()
+  return chart_result ~= nil
+end, "chart data")
+
+print("")
+print("── chart " .. string.rep("─", 62))
+for _, text in ipairs((chart.render(chart_result, { width = 70 }))) do
+  print("  " .. text)
+end
+
+local audit = require("dbclient.audit")
+local audit_schema
+require("dbclient.core.client").async(function()
+  audit_schema = audit.collect(target.id, "main", { deep = true })
+end)
+wait(function()
+  return audit_schema ~= nil
+end, "audit")
+
+print("")
+print("── schema audit " .. string.rep("─", 56))
+for _, text in ipairs((audit.report(audit_schema, audit.analyse(audit_schema)))) do
+  print("  " .. text)
+end
+
+local joins = require("dbclient.joins")
+local graph
+require("dbclient.core.client").async(function()
+  graph = joins.graph(target.id, "main")
+end)
+wait(function()
+  return graph ~= nil
+end, "join graph")
+
+print("")
+print("── join builder " .. string.rep("─", 56))
+local paths = joins.paths(graph, "orders", "customers")
+if #paths > 0 then
+  print("  " .. joins.describe(paths[1], "orders"))
+  for _, text in ipairs(joins.render(paths[1], { schema = "main", from = "orders" })) do
+    print("  " .. text)
+  end
+else
+  print("  (no path found)")
+end
+
 -- 9. Connection manager rendering.
 vim.cmd("DBClientConnections")
 local manager = vim.fn.bufnr("dbclient://connections")

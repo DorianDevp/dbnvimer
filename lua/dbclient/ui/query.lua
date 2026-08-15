@@ -136,16 +136,43 @@ local function guarded(sql, target)
     end
   end
 
-  if #blocking == 0 then
-    return true
-  end
-
   local access = target.spec and target.spec.access or "write"
   if access == "read" then
     return true -- the core will refuse it anyway, with a clearer message
   end
 
   local co = coroutine.running()
+  local blast = require("dbclient.blast")
+
+  -- Ask what the statement would touch. A single-row update goes straight
+  -- through; anything wider, unfiltered or destructive gets shown first.
+  local report = { supported = false }
+  if settings.preview_writes_over ~= false then
+    local ok, response = pcall(blast.inspect, target.id, sql)
+    if ok then
+      report = response
+    end
+  end
+
+  if report.supported and blast.should_confirm(report, blocking) then
+    vim.schedule(function()
+      blast.confirm({
+        session_id = target.id,
+        sql = sql,
+        connection = target.name,
+        warnings = blocking,
+        on_decide = function(proceed)
+          coroutine.resume(co, proceed)
+        end,
+      })
+    end)
+    return coroutine.yield()
+  end
+
+  if #blocking == 0 then
+    return true
+  end
+
   local prompt = table.concat(blocking, "; ")
   local needs_name = vim.tbl_contains(settings.typed_confirmation_for, access)
     and target.spec
@@ -269,6 +296,29 @@ function M.execute_buffer()
   end)
 end
 
+--- Show which rows the statement at the cursor would change.
+function M.blast_radius()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local target = session_for(bufnr)
+  if not target then
+    return
+  end
+
+  client.async(function()
+    local sql = M.sql_at_cursor(bufnr)
+    if not sql then
+      return notify("no SQL under the cursor", vim.log.levels.WARN)
+    end
+    require("dbclient.blast").show({
+      session_id = target.id,
+      sql = sql,
+      connection = target.name,
+    })
+  end, function(err)
+    notify(err, vim.log.levels.ERROR)
+  end)
+end
+
 ---@param analyze boolean
 function M.explain(analyze)
   local bufnr = vim.api.nvim_get_current_buf()
@@ -306,8 +356,27 @@ function M.set_diagnostics(bufnr, error_message)
 
   local text = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
 
+  local bound = M.buffers[bufnr]
+  local target = bound and session.get(bound.session_id) or session.current()
+
   client.async(function()
     local response = client.call("lint-sql", { sql = text })
+    local entries = vim.deepcopy(response.diagnostics or {})
+
+    -- The static linter can only guess at names and types; the server knows.
+    -- Preparing and discarding each statement is the cheapest way to ask.
+    if target then
+      local ok, server = pcall(
+        client.call,
+        "validate",
+        { sql = text },
+        target.id
+      )
+      if ok then
+        vim.list_extend(entries, server.diagnostics or {})
+      end
+    end
+
     local severities = {
       error = vim.diagnostic.severity.ERROR,
       warn = vim.diagnostic.severity.WARN,
@@ -315,7 +384,7 @@ function M.set_diagnostics(bufnr, error_message)
     }
 
     local diagnostics = {}
-    for _, entry in ipairs(response.diagnostics or {}) do
+    for _, entry in ipairs(entries) do
       local line, column = M.offset_to_position(bufnr, entry.start)
       local end_line, end_column = M.offset_to_position(bufnr, entry["end"])
       table.insert(diagnostics, {
@@ -528,6 +597,9 @@ function M.attach(bufnr)
     end,
     hover = M.hover,
     goto_definition = M.goto_definition,
+    blast_radius = function()
+      M.blast_radius()
+    end,
     save = function()
       local bound = M.buffers[bufnr]
       local target = bound and session.get(bound.session_id) or session.current()

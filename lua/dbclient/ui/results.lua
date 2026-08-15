@@ -227,6 +227,9 @@ function M.attach(bufnr)
     transpose = M.transpose,
     yank = M.yank,
     export = M.export_result,
+    chart = function()
+      require("dbclient.chart").pick_and_show()
+    end,
     snapshot = function()
       require("dbclient.snapshot").save_current()
     end,

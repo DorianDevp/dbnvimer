@@ -108,6 +108,10 @@ local defaults = {
   guard = {
     confirm_unfiltered_writes = true,
     confirm_destructive = true,
+    --- Show which rows an UPDATE or DELETE would touch when it would affect
+    --- more than this many. A single-row edit is the common case and previewing
+    --- it would be noise; anything wider is worth a look. `false` disables it.
+    preview_writes_over = 1,
     --- Connections with this access level require typing the object name.
     typed_confirmation_for = { "write" },
   },

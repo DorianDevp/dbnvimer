@@ -535,6 +535,101 @@ local function suite(adapter, spec)
     end },
   })
 
+  t.describe(adapter .. ": blast radius and validation", {
+    { "previews the rows a delete would remove", function()
+      run(function()
+        local report = client.call(
+          "blast-radius",
+          { sql = "delete from dbclient_items where name = 'Łódź'" },
+          target.id
+        )
+        t.ok(report.supported)
+        t.eq(report.count, 1)
+        t.eq(#report.result.rows, 1)
+
+        -- Previewing must not have changed anything.
+        t.eq(session.count(target.id, { schema = schema, table = "dbclient_items" }), 2)
+      end)
+    end },
+
+    { "previews the rows an update would touch", function()
+      run(function()
+        local report = client.call(
+          "blast-radius",
+          { sql = "update dbclient_items set note = 'x'" },
+          target.id
+        )
+        t.ok(report.supported)
+        t.eq(report.count, 2, "an unfiltered update touches every row")
+      end)
+    end },
+
+    { "declines to preview what it cannot rewrite", function()
+      run(function()
+        local report = client.call(
+          "blast-radius",
+          { sql = "select * from dbclient_items" },
+          target.id
+        )
+        t.falsy(report.supported)
+      end)
+    end },
+
+    { "accepts a valid statement", function()
+      run(function()
+        local response = client.call(
+          "validate",
+          { sql = "select id, name from dbclient_items where id = 1" },
+          target.id
+        )
+        t.eq(response.diagnostics, {})
+      end)
+    end },
+
+    { "rejects an unknown column, without running anything", function()
+      run(function()
+        local response = client.call(
+          "validate",
+          { sql = "select no_such_column from dbclient_items" },
+          target.id
+        )
+        t.eq(#response.diagnostics, 1)
+        t.matches(response.diagnostics[1].message:lower(), "no_such_column")
+      end)
+    end },
+
+    { "rejects an unknown table", function()
+      run(function()
+        local response = client.call(
+          "validate",
+          { sql = "select * from no_such_table_here" },
+          target.id
+        )
+        t.eq(#response.diagnostics, 1)
+      end)
+    end },
+
+    { "reports the offending statement of a script", function()
+      run(function()
+        local response = client.call(
+          "validate",
+          { sql = "select 1;\nselect * from no_such_table_here;" },
+          target.id
+        )
+        t.eq(#response.diagnostics, 1)
+        t.ok(response.diagnostics[1].start > 5, "the position points past the valid statement")
+      end)
+    end },
+
+    { "does not execute what it validates", function()
+      run(function()
+        local before = session.count(target.id, { schema = schema, table = "dbclient_items" })
+        client.call("validate", { sql = "delete from dbclient_items" }, target.id)
+        t.eq(session.count(target.id, { schema = schema, table = "dbclient_items" }), before)
+      end)
+    end },
+  })
+
   t.describe(adapter .. ": safety and cancellation", {
     { "cancels a long running statement", function()
       local finished, failed = false, nil

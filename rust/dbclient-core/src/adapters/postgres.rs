@@ -13,7 +13,7 @@ use crate::protocol::{
 };
 use crate::session::{
     clamp_limit, classify, elapsed_ms, inline_placeholders, validate_filter, Access, BackendInfo,
-    CancelHandle, ConnectionSpec, DbSession, DdlKind,
+    CancelHandle, ConnectionSpec, DbSession, DdlKind, ValidationError,
 };
 use crate::sqlparse;
 use anyhow::{anyhow, Context, Result};
@@ -569,6 +569,28 @@ impl DbSession for PostgresSession {
             output.rows.truncate(cap as usize);
         }
         Ok(output)
+    }
+
+    fn validate(&mut self, sql: &str) -> Result<Option<ValidationError>> {
+        // `prepare` describes without executing, and the returned statement
+        // deallocates when it drops.
+        match self.client.prepare(sql) {
+            Ok(_) => Ok(None),
+            Err(error) => {
+                let db_error = error.as_db_error();
+                let position = db_error.and_then(|error| match error.position() {
+                    Some(postgres::error::ErrorPosition::Original(position)) => Some(*position),
+                    Some(postgres::error::ErrorPosition::Internal { position, .. }) => {
+                        Some(*position)
+                    }
+                    None => None,
+                });
+                let message = db_error
+                    .map(|error| error.message().to_string())
+                    .unwrap_or_else(|| error.to_string());
+                Ok(Some(ValidationError { message, position }))
+            }
+        }
     }
 
     fn explain(&mut self, sql: &str, analyze: bool) -> Result<JsonValue> {

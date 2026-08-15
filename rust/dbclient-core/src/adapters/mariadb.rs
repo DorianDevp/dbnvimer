@@ -5,7 +5,7 @@ use crate::protocol::{
 };
 use crate::session::{
     clamp_limit, classify, elapsed_ms, encode_binary, inline_placeholders, validate_filter, Access,
-    BackendInfo, CancelHandle, ConnectionSpec, DbSession, DdlKind,
+    BackendInfo, CancelHandle, ConnectionSpec, DbSession, DdlKind, ValidationError,
 };
 use crate::sqlparse;
 use anyhow::{anyhow, Context, Result};
@@ -660,6 +660,21 @@ impl DbSession for MariaDbSession {
             output.rows.truncate(cap as usize);
         }
         Ok(output)
+    }
+
+    fn validate(&mut self, sql: &str) -> Result<Option<ValidationError>> {
+        // MySQL reports no character position, so the message carries the whole
+        // signal — it does at least name the offending identifier.
+        match self.conn.prep(sql) {
+            Ok(statement) => {
+                let _ = self.conn.close(statement);
+                Ok(None)
+            }
+            Err(error) => Ok(Some(ValidationError {
+                message: error.to_string(),
+                position: None,
+            })),
+        }
     }
 
     fn explain(&mut self, sql: &str, analyze: bool) -> Result<JsonValue> {

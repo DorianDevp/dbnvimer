@@ -513,6 +513,72 @@ fn handle_session_op(request: &Request, session: &mut dyn DbSession) -> Result<J
             }
             Ok(json!({ "results": results }))
         }
+        "validate" => {
+            // Each statement is prepared on its own, because a script cannot be
+            // prepared as a unit and one bad statement should not hide the rest.
+            let sql = string_param(request, "sql")?;
+            let mut problems = Vec::new();
+
+            for statement in sqlparse::split(&sql) {
+                if let Some(error) = session.validate(&statement.text)? {
+                    // The backend counts characters within the statement; the
+                    // editor needs a byte offset within the whole buffer.
+                    let offset = error
+                        .position
+                        .and_then(|position| {
+                            statement
+                                .text
+                                .char_indices()
+                                .nth(position.saturating_sub(1) as usize)
+                                .map(|(index, _)| statement.start + index)
+                        })
+                        .unwrap_or(statement.start);
+
+                    problems.push(json!({
+                        "start": offset,
+                        "end": statement.end,
+                        "severity": "error",
+                        "code": "server",
+                        "message": error.message,
+                    }));
+                }
+            }
+
+            Ok(json!({ "diagnostics": problems }))
+        }
+        "blast-radius" => {
+            // Show which rows a write would touch, before it touches them.
+            let sql = string_param(request, "sql")?;
+            let limit = params
+                .get("limit")
+                .and_then(JsonValue::as_u64)
+                .unwrap_or(200);
+
+            let Some((rows_sql, count_sql)) = sqlparse::blast_radius(&sql) else {
+                return Ok(json!({
+                    "supported": false,
+                    "reason": "only UPDATE and DELETE on a single target can be previewed",
+                }));
+            };
+
+            let preview = session.query(&rows_sql, Some(limit))?;
+            let total = session
+                .query(&count_sql, Some(1))?
+                .rows
+                .first()
+                .and_then(|row| row.first())
+                .and_then(|value| value.as_str())
+                .and_then(|value| value.parse::<u64>().ok())
+                .unwrap_or(preview.rows.len() as u64);
+
+            Ok(json!({
+                "supported": true,
+                "kind": sqlparse::leading_keyword(&sql),
+                "count": total,
+                "sql": rows_sql,
+                "result": preview,
+            }))
+        }
         "explain" => {
             let sql = string_param(request, "sql")?;
             let analyze = params

@@ -370,6 +370,34 @@ local function define_commands()
     require("dbclient.trail").forward(tonumber(args.args) or 1)
   end, { nargs = "?", force = true, desc = "Forward along the navigation trail" })
 
+  command("DBClientJoin", function(args)
+    local parts = vim.split(args.args, "%s+")
+    if #parts == 2 then
+      local target = session.current()
+      local schema = target and target.info and target.info.database
+      if schema then
+        return require("dbclient.joins").build({
+          schema = schema,
+          from = parts[1],
+          to = parts[2],
+        })
+      end
+    end
+    require("dbclient.joins").prompt()
+  end, { nargs = "*", force = true, desc = "Build a join between two tables" })
+
+  command("DBClientAudit", function(args)
+    require("dbclient.audit").prompt({ deep = args.bang })
+  end, { bang = true, force = true, desc = "Audit the schema (! also reads column statistics)" })
+
+  command("DBClientChart", function()
+    require("dbclient.chart").pick_and_show()
+  end, { force = true, desc = "Chart the current result set" })
+
+  command("DBClientBlastRadius", function()
+    query().blast_radius()
+  end, { force = true, desc = "Show which rows the statement would change" })
+
   command("DBClientHelp", function()
     require("dbclient.ui.help").show_all()
   end, { force = true })
@@ -586,6 +614,18 @@ local function global_handlers()
     end,
     trail_forward = function()
       require("dbclient.trail").forward()
+    end,
+    join_builder = function()
+      require("dbclient.joins").prompt()
+    end,
+    audit = function()
+      require("dbclient.audit").prompt()
+    end,
+    chart = function()
+      require("dbclient.chart").pick_and_show()
+    end,
+    blast_radius = function()
+      query().blast_radius()
     end,
     compare = function()
       vim.ui.select({

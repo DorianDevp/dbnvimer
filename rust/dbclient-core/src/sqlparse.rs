@@ -680,3 +680,171 @@ mod tests {
         assert_eq!(texts(";;\n;  ;"), Vec::<String>::new());
     }
 }
+
+/// Rewrite a write statement into the `SELECT` that shows what it would touch.
+///
+/// The point is to answer "which rows does this hit" before running it, so the
+/// rewrite has to be exact rather than clever: anything not confidently
+/// understood returns `None`, and the caller says so instead of showing a
+/// preview that might be of different rows than the statement will change.
+///
+/// Returns `(rows_query, count_query)`.
+pub fn blast_radius(sql: &str) -> Option<(String, String)> {
+    let kind = leading_keyword(sql);
+    let masked = strip_noise(sql);
+    let bytes = masked.as_bytes();
+
+    match kind.as_str() {
+        "delete" => {
+            // Everything after the top-level `from` is already a valid source:
+            // `delete from t where x` -> `select * from t where x`.
+            let from = find_keyword(bytes, "from", 0)?;
+            let source = sql[from + 4..].trim_end_matches(';').trim();
+            if source.is_empty() {
+                return None;
+            }
+            // A multi-table delete names targets before `from`; the preview
+            // would be of the join, not of the deleted rows, so decline.
+            if !sql[..from].trim()[6..].trim().is_empty() {
+                return None;
+            }
+            Some((
+                format!("select * from {source}"),
+                format!("select count(*) from {source}"),
+            ))
+        }
+        "update" => {
+            let set = find_keyword(bytes, "set", 0)?;
+            let target = sql[6..set].trim();
+            if target.is_empty() {
+                return None;
+            }
+
+            let where_at = find_keyword(bytes, "where", set);
+            let predicate = match where_at {
+                Some(position) => sql[position..].trim_end_matches(';').trim().to_string(),
+                None => String::new(),
+            };
+
+            let source = if predicate.is_empty() {
+                target.to_string()
+            } else {
+                format!("{target} {predicate}")
+            };
+            Some((
+                format!("select * from {source}"),
+                format!("select count(*) from {source}"),
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// Byte offset of a bare keyword at parenthesis depth zero, at or after `from`.
+///
+/// Depth matters: the `where` of `update t set a = (select … where …)` belongs
+/// to the subquery, not to the update.
+fn find_keyword(bytes: &[u8], keyword: &str, from: usize) -> Option<usize> {
+    let needle = keyword.as_bytes();
+    let mut depth = 0i32;
+    let mut index = from;
+
+    while index < bytes.len() {
+        match bytes[index] {
+            b'(' => depth += 1,
+            b')' => depth -= 1,
+            _ => {}
+        }
+
+        if depth == 0
+            && index + needle.len() <= bytes.len()
+            && bytes[index..index + needle.len()].eq_ignore_ascii_case(needle)
+        {
+            let before_ok = index == 0 || !is_word_byte(bytes[index - 1]);
+            let after = index + needle.len();
+            let after_ok = after >= bytes.len() || !is_word_byte(bytes[after]);
+            if before_ok && after_ok {
+                return Some(index);
+            }
+        }
+
+        index += 1;
+    }
+
+    None
+}
+
+#[cfg(test)]
+mod blast_tests {
+    use super::*;
+
+    #[test]
+    fn rewrites_a_delete() {
+        let (rows, count) = blast_radius("delete from users where id > 10").unwrap();
+        assert_eq!(rows, "select * from users where id > 10");
+        assert_eq!(count, "select count(*) from users where id > 10");
+    }
+
+    #[test]
+    fn rewrites_an_unfiltered_delete() {
+        let (rows, _) = blast_radius("delete from users;").unwrap();
+        assert_eq!(rows, "select * from users");
+    }
+
+    #[test]
+    fn rewrites_an_update() {
+        let (rows, count) =
+            blast_radius("update users set name = 'x', city = 'y' where id = 3").unwrap();
+        assert_eq!(rows, "select * from users where id = 3");
+        assert_eq!(count, "select count(*) from users where id = 3");
+    }
+
+    #[test]
+    fn rewrites_an_unfiltered_update() {
+        let (rows, _) = blast_radius("update users set active = 0").unwrap();
+        assert_eq!(rows, "select * from users");
+    }
+
+    #[test]
+    fn keeps_a_table_alias() {
+        let (rows, _) = blast_radius("update users u set u.name = 'x' where u.id = 1").unwrap();
+        assert_eq!(rows, "select * from users u where u.id = 1");
+    }
+
+    #[test]
+    fn ignores_a_where_inside_a_subquery() {
+        let sql = "update t set a = (select max(x) from y where y.id = 1) where t.id = 2";
+        let (rows, _) = blast_radius(sql).unwrap();
+        assert_eq!(rows, "select * from t where t.id = 2");
+    }
+
+    #[test]
+    fn ignores_keywords_inside_literals() {
+        let (rows, _) = blast_radius("update t set note = 'where set from' where id = 1").unwrap();
+        assert_eq!(rows, "select * from t where id = 1");
+    }
+
+    #[test]
+    fn handles_a_joined_update() {
+        let sql = "update orders o join customers c on c.id = o.customer_id set o.flag = 1 where c.city = 'PL'";
+        let (rows, _) = blast_radius(sql).unwrap();
+        assert_eq!(
+            rows,
+            "select * from orders o join customers c on c.id = o.customer_id where c.city = 'PL'"
+        );
+    }
+
+    #[test]
+    fn declines_a_multi_table_delete() {
+        // `delete a from a join b` deletes from `a` only; previewing the join
+        // would show different rows, so it is refused rather than guessed.
+        assert!(blast_radius("delete a from a join b on b.id = a.b_id").is_none());
+    }
+
+    #[test]
+    fn declines_anything_that_is_not_a_write() {
+        assert!(blast_radius("select * from users").is_none());
+        assert!(blast_radius("insert into t values (1)").is_none());
+        assert!(blast_radius("truncate table t").is_none());
+    }
+}

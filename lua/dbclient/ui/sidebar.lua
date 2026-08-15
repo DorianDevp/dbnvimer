@@ -481,6 +481,26 @@ function M.import()
   })
 end
 
+function M.join_builder()
+  local node = node_at_cursor()
+  if not node or not node.schema then
+    return notify("move onto a schema or table first", vim.log.levels.WARN)
+  end
+  require("dbclient.joins").prompt({
+    session_id = node.session_id,
+    schema = node.schema,
+    from = node.table,
+  })
+end
+
+function M.audit()
+  local node = node_at_cursor()
+  if not node or not node.schema then
+    return notify("move onto a schema first", vim.log.levels.WARN)
+  end
+  require("dbclient.audit").run({ session_id = node.session_id, schema = node.schema })
+end
+
 function M.open_query()
   local node = node_at_cursor()
   local target = node and node.session_id or nil
@@ -646,6 +666,8 @@ function M.open()
     show_indexes = M.show_indexes,
     table_sizes = M.table_sizes,
     diagram = M.diagram,
+    join_builder = M.join_builder,
+    audit = M.audit,
     generate = M.generate,
     import = M.import,
     yank_name = M.yank_name,

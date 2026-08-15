@@ -76,6 +76,15 @@ impl ConnectionSpec {
     }
 }
 
+/// A statement the server refused to prepare.
+#[derive(Clone, Debug, Serialize)]
+pub struct ValidationError {
+    pub message: String,
+    /// 1-based character position, when the backend reports one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub position: Option<u32>,
+}
+
 /// Static facts about the server behind a session.
 #[derive(Clone, Debug, Serialize)]
 pub struct BackendInfo {
@@ -155,6 +164,14 @@ pub trait DbSession: Send {
     fn preview(&mut self, params: &PreviewParams) -> Result<QueryOutput>;
     fn count(&mut self, params: &PreviewParams) -> Result<u64>;
     fn query(&mut self, sql: &str, limit: Option<u64>) -> Result<QueryOutput>;
+
+    /// Ask the server whether a statement is valid, without running it.
+    ///
+    /// Preparing and discarding is the only way to get the server's own opinion
+    /// on names, types and syntax; a client-side linter can only guess. Returns
+    /// `None` when the statement is accepted, otherwise the message and, where
+    /// the backend reports one, a 1-based character position within `sql`.
+    fn validate(&mut self, sql: &str) -> Result<Option<ValidationError>>;
     fn explain(&mut self, sql: &str, analyze: bool) -> Result<JsonValue>;
 
     fn apply_changes(&mut self, changes: &[RowChange]) -> Result<ApplyOutcome>;
