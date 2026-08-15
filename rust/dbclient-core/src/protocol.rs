@@ -225,6 +225,15 @@ pub fn err_frame(id: u64, error: &str) -> JsonValue {
     json!({ "id": id, "ok": false, "error": error })
 }
 
+/// An error frame carrying the structured form alongside the string.
+///
+/// `error` stays exactly what it was, so anything reading the old shape keeps
+/// working; `detail` is the part that lets the front end put a caret on the
+/// offending token instead of printing a sentence about it.
+pub fn err_frame_detailed(id: u64, error: &str, detail: JsonValue) -> JsonValue {
+    json!({ "id": id, "ok": false, "error": error, "detail": detail })
+}
+
 pub fn event_frame(event: &str, session: Option<&str>, data: JsonValue) -> JsonValue {
     json!({ "event": event, "session": session, "data": data })
 }

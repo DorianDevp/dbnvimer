@@ -8,6 +8,7 @@
 //! Column types come from a describe-only `prepare`, so the UI still knows how
 //! to align and format each column.
 
+use crate::dberror;
 use crate::protocol::{
     ApplyOutcome, ColumnDesc, PreviewParams, QueryOutput, RowChange, ValueClass,
 };
@@ -80,10 +81,9 @@ impl PostgresSession {
     fn simple(&mut self, sql: &str) -> Result<QueryOutput> {
         let start = Instant::now();
         let described = self.describe(sql);
-        let messages = self
-            .client
-            .simple_query(sql)
-            .context("failed to execute query")?;
+        let messages = self.client.simple_query(sql).map_err(|error| {
+            anyhow!(dberror::from_postgres(&error).with_statement(sql, None, None))
+        })?;
 
         let mut columns: Vec<ColumnDesc> = described.unwrap_or_default();
         let mut rows: Vec<Vec<JsonValue>> = Vec::new();

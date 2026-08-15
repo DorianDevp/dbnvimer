@@ -466,6 +466,46 @@ for _, spec in ipairs({
 end
 
 print("")
+print("── what a mistake looks like " .. string.rep("─", 43))
+local errors = require("dbclient.errors")
+-- `M.connect` warms this on a real connection; the smoke run goes through
+-- `session.connect` directly, so the suggestion would have nothing to compare
+-- against.
+client.async(function()
+  session.columns(target.id, "main", "customers")
+  session.tables(target.id, "main")
+end)
+vim.wait(3000, function()
+  return false
+end, 50)
+
+for _, sql in ipairs({
+  "select * FORM customers",
+  "select nmae from customers",
+  "insert into orders (id, customer_id, total) values (13, 9999, 1.0)",
+}) do
+  local failed = false
+  client.async(function()
+    session.query(target.id, sql)
+  end, function(err, detail)
+    failed = true
+    local normalised = errors.normalise(err, detail)
+    normalised.session_id = target.id
+    print("")
+    for _, line in ipairs((errors.render(normalised, {
+      source = sql,
+      session_id = target.id,
+      width = 74,
+    }))) do
+      print("  " .. line)
+    end
+  end)
+  vim.wait(5000, function()
+    return failed
+  end, 25)
+end
+
+print("")
 print("── the generated palette " .. string.rep("─", 47))
 for index, line in ipairs((require("dbclient.ui.theme").describe())) do
   if index <= 12 then

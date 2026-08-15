@@ -6,7 +6,10 @@
 //! thread while the session thread is still busy.
 
 use crate::adapters::{mariadb::MariaDbSession, postgres::PostgresSession, sqlite::SqliteSession};
-use crate::protocol::{err_frame, event_frame, ok_frame, PreviewParams, Request, RowChange};
+use crate::dberror::{self, DbError};
+use crate::protocol::{
+    err_frame, err_frame_detailed, event_frame, ok_frame, PreviewParams, Request, RowChange,
+};
 use crate::session::{CancelHandle, ConnectionSpec, DbSession, DdlKind};
 use crate::sqlparse;
 use crate::tunnel::{self, SshConfig, TunnelHandle};
@@ -205,8 +208,52 @@ fn dispatch(request: Request, writer: &Writer, registry: &Arc<Mutex<Registry>>) 
 fn reply(writer: &Writer, id: u64, result: Result<JsonValue>) {
     match result {
         Ok(data) => writer.send(ok_frame(id, data)),
-        Err(error) => writer.send(err_frame(id, &format!("{error:#}"))),
+        Err(error) => writer.send(error_frame(id, &error)),
     }
+}
+
+/// Turn an error into a frame, keeping whatever structure survived the chain.
+///
+/// Anything that came from a driver carries a `DbError` somewhere in its
+/// `anyhow` chain. Everything else — a missing parameter, a refused write, a
+/// broken tunnel — is still classified rather than shipped as bare prose, so
+/// the front end has exactly one shape to render.
+fn error_frame(id: u64, error: &anyhow::Error) -> JsonValue {
+    let message = format!("{error:#}");
+
+    for cause in error.chain() {
+        if let Some(db) = cause.downcast_ref::<DbError>() {
+            let mut detail = serde_json::to_value(db).unwrap_or(JsonValue::Null);
+            if let Some(object) = detail.as_object_mut() {
+                // Computed once here rather than reimplemented in Lua.
+                object.insert(
+                    "statement_fault".into(),
+                    JsonValue::Bool(db.kind.is_statement_fault()),
+                );
+                object.insert("transient".into(), JsonValue::Bool(db.kind.is_transient()));
+                // The context the chain added is what says *what* was being
+                // attempted, which the driver never knows.
+                if message != db.message {
+                    object.insert("context".into(), JsonValue::String(message.clone()));
+                }
+            }
+            return err_frame_detailed(id, &db.message, detail);
+        }
+    }
+
+    let fallback = dberror::classify_local(&message);
+    let mut detail = serde_json::to_value(&fallback).unwrap_or(JsonValue::Null);
+    if let Some(object) = detail.as_object_mut() {
+        object.insert(
+            "statement_fault".into(),
+            JsonValue::Bool(fallback.kind.is_statement_fault()),
+        );
+        object.insert(
+            "transient".into(),
+            JsonValue::Bool(fallback.kind.is_transient()),
+        );
+    }
+    err_frame_detailed(id, &message, detail)
 }
 
 fn open_session(
@@ -511,8 +558,18 @@ fn handle_session_op(
             let sql = string_param(request, "sql")?;
             let limit = params.get("limit").and_then(JsonValue::as_u64);
             let mut results = Vec::new();
-            for statement in sqlparse::split(&sql) {
-                let output = session.query(&statement.text, limit)?;
+            for (index, statement) in sqlparse::split(&sql).into_iter().enumerate() {
+                // Which statement failed, and where it began in the text the
+                // user sent. Without both, an error in statement seven of a
+                // script points at line one.
+                let output = session.query(&statement.text, limit).map_err(|error| {
+                    dberror::locate(
+                        error,
+                        &statement.text,
+                        index as u32 + 1,
+                        statement.start as u32,
+                    )
+                })?;
                 results.push(json!({
                     "statement": statement,
                     "result": output,

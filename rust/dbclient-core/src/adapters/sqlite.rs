@@ -3,6 +3,7 @@
 //! SQLite has no schemas in the SQL sense; attached databases (`main`, `temp`
 //! and anything `attach`ed) fill that role, so they are what the sidebar shows.
 
+use crate::dberror;
 use crate::protocol::{
     ApplyOutcome, ColumnDesc, PreviewParams, QueryOutput, RowChange, ValueClass,
 };
@@ -56,10 +57,9 @@ impl SqliteSession {
 
     fn run(&self, sql: &str, params: &[SqlValue]) -> Result<QueryOutput> {
         let start = Instant::now();
-        let mut statement = self
-            .conn
-            .prepare(sql)
-            .with_context(|| format!("failed to prepare: {}", first_line(sql)))?;
+        let mut statement = self.conn.prepare(sql).map_err(|error| {
+            anyhow!(dberror::from_sqlite(&error).with_statement(sql, None, None))
+        })?;
 
         let width = statement.column_count();
         if width == 0 {
@@ -67,7 +67,9 @@ impl SqliteSession {
             let affected = self
                 .conn
                 .execute(sql, rusqlite::params_from_iter(params.iter()))
-                .context("failed to execute statement")?;
+                .map_err(|error| {
+                    anyhow!(dberror::from_sqlite(&error).with_statement(sql, None, None))
+                })?;
             return Ok(QueryOutput {
                 columns: Vec::new(),
                 rows: Vec::new(),
@@ -578,10 +580,9 @@ impl DbSession for SqliteSession {
     fn stream_query(&mut self, sql: &str, batch_size: usize, sink: BatchSink<'_>) -> Result<u64> {
         self.enforce_access(sql)?;
 
-        let mut statement = self
-            .conn
-            .prepare(sql)
-            .with_context(|| format!("failed to prepare: {}", first_line(sql)))?;
+        let mut statement = self.conn.prepare(sql).map_err(|error| {
+            anyhow!(dberror::from_sqlite(&error).with_statement(sql, None, None))
+        })?;
 
         let width = statement.column_count();
         let columns = statement
@@ -968,10 +969,6 @@ fn format_float(value: f64) -> String {
     } else {
         format!("{value}")
     }
-}
-
-fn first_line(sql: &str) -> String {
-    sql.lines().next().unwrap_or_default().trim().to_string()
 }
 
 fn text(value: Option<&JsonValue>) -> String {

@@ -67,6 +67,7 @@ M.groups = {
       { lhs = "D", action = "schema_dump", desc = "write the schema out as files" },
       { lhs = "V", action = "schema_drift", desc = "compare the server against the committed schema" },
       { lhs = "/", action = "replace_in_schema", desc = "find and replace across every table" },
+      { lhs = "!", action = "error_detail", desc = "explain the last error in full" },
     },
   },
 

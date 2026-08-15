@@ -5,6 +5,7 @@
 //! `:checkhealth`.
 
 mod adapters;
+mod dberror;
 mod export;
 mod protocol;
 mod server;

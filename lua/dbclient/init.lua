@@ -476,6 +476,18 @@ local function define_commands()
     require("dbclient.ui.help").show_all()
   end, { force = true })
 
+  command("DBClientError", function()
+    require("dbclient.errors").show_last()
+  end, { force = true, desc = "Explain the last error in full" })
+
+  command("DBClientErrors", function(args)
+    if args.bang then
+      require("dbclient.errors").clear()
+      return notify("error history cleared")
+    end
+    require("dbclient.errors").browse()
+  end, { bang = true, force = true, desc = "Every error this session (! clears)" })
+
   command("DBClientPalette", function()
     require("dbclient.ui.help").show_palette()
   end, { force = true, desc = "Show the generated palette and its contrast ratios" })
@@ -808,6 +820,9 @@ local function global_handlers()
     end,
     replace_in_schema = function()
       require("dbclient.replace").open()
+    end,
+    error_detail = function()
+      require("dbclient.errors").show_last()
     end,
     compare = function()
       vim.ui.select({

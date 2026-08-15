@@ -132,7 +132,15 @@ function M.connect(name, callback)
       if callback then
         callback(session, nil)
       end
-    end, function(err)
+    end, function(err, detail)
+      -- A failed connection is the one error where the message is almost never
+      -- the answer. Test each layer and name the one that actually broke.
+      local normalised = require("dbclient.errors").normalise(err, detail)
+      require("dbclient.errors").record(err, detail)
+      pcall(function()
+        require("dbclient.diagnose").show({ name = name, spec = spec, error = normalised })
+      end)
+
       if callback then
         callback(nil, err)
       else

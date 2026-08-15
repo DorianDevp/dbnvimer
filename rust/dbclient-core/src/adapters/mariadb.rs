@@ -1,5 +1,6 @@
 //! MariaDB / MySQL session adapter.
 
+use crate::dberror;
 use crate::protocol::{
     ApplyOutcome, ColumnDesc, PreviewParams, QueryOutput, RowChange, ValueClass,
 };
@@ -74,7 +75,11 @@ impl MariaDbSession {
         let mut result = self
             .conn
             .exec_iter(sql, params)
-            .context("failed to execute query")?;
+            // Typed rather than stringified: the front end draws a caret from
+            // the fragment MySQL quotes, and `{error:#}` throws that away.
+            .map_err(
+                |error| anyhow!(dberror::from_mysql(&error).with_statement(sql, None, None)),
+            )?;
 
         let columns = result
             .columns()
@@ -714,10 +719,9 @@ impl DbSession for MariaDbSession {
     fn stream_query(&mut self, sql: &str, batch_size: usize, sink: BatchSink<'_>) -> Result<u64> {
         self.enforce_access(sql)?;
 
-        let mut result = self
-            .conn
-            .exec_iter(sql, Params::Empty)
-            .context("failed to execute query")?;
+        let mut result = self.conn.exec_iter(sql, Params::Empty).map_err(|error| {
+            anyhow!(dberror::from_mysql(&error).with_statement(sql, None, None))
+        })?;
 
         let columns = result
             .columns()
@@ -843,7 +847,10 @@ impl DbSession for MariaDbSession {
                 let result = self
                     .conn
                     .exec_iter(sql.as_str(), Params::Positional(values))
-                    .with_context(|| format!("failed to apply {}", change.label()))?;
+                    .map_err(|error| {
+                        anyhow!(dberror::from_mysql(&error).with_statement(&sql, None, None))
+                            .context(format!("failed to apply {}", change.label()))
+                    })?;
                 let count = result.affected_rows();
                 drop(result);
                 if count == 0 && !matches!(change, RowChange::Insert { .. }) {

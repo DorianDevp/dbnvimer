@@ -306,6 +306,7 @@ Available everywhere; prefixed with `g:dbclient_leader` (default `<leader>d`).
 | `<leader>dD` | write the schema out as files |
 | `<leader>dV` | compare the server against the committed schema |
 | `<leader>d/` | find and replace across every table |
+| `<leader>d!` | explain the last error in full |
 
 ### Sidebar
 

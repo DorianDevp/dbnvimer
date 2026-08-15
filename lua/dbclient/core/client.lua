@@ -87,7 +87,11 @@ local function handle_frame(frame)
   if frame.ok then
     entry.callback(nil, frame.data)
   else
-    entry.callback(frame.error or "unknown core error", nil)
+    -- The structured form travels beside the message rather than instead of
+    -- it, so every existing handler keeps working on a plain string while
+    -- anything that wants the position, the constraint or the offending value
+    -- can ask for it.
+    entry.callback(frame.error or "unknown core error", nil, frame.detail)
   end
 end
 
@@ -215,17 +219,31 @@ function M.request(op, params, session, callback)
   return id
 end
 
+--- The structured form of the error `M.call` is about to raise.
+---
+--- Errors stay strings because every call site treats them as one, so the
+--- structure rides alongside in a slot rather than inside the value. That is
+--- safe because it is written and read within a single coroutine resume: the
+--- `error()` in `M.call` unwinds straight into the handler below with nothing
+--- able to run in between.
+M.last_error = nil
+
 --- Run `fn` as a coroutine in which `M.call` behaves like a blocking call.
 ---@param fn fun()
----@param on_error? fun(err: string)
+---@param on_error? fun(err: string, detail: table|nil)
 function M.async(fn, on_error)
   local co = coroutine.create(fn)
   local function step(...)
     local ok, err = coroutine.resume(co, ...)
     if not ok then
       local message = type(err) == "string" and err or vim.inspect(err)
+      local detail = M.last_error
+      M.last_error = nil
+      if detail then
+        require("dbclient.errors").record(message, detail)
+      end
       if on_error then
-        on_error(message)
+        on_error(message, detail)
       else
         notify(message)
       end
@@ -247,14 +265,16 @@ function M.call(op, params, session)
     error("dbclient: client.call must run inside client.async", 0)
   end
 
-  M.request(op, params, session, function(err, data)
-    step(err, data)
+  M.request(op, params, session, function(err, data, detail)
+    step(err, data, detail)
   end)
 
-  local err, data = coroutine.yield()
+  local err, data, detail = coroutine.yield()
   if err then
+    M.last_error = detail
     error(err, 0)
   end
+  M.last_error = nil
   return data
 end
 

@@ -228,10 +228,15 @@ pub trait DbSession: Send {
         }
         for statement in crate::sqlparse::split(sql) {
             if !statement.returns_rows {
-                return Err(anyhow!(
-                    "connection is read-only: refusing to run `{}`",
-                    statement.kind
-                ));
+                // Typed, so the front end explains what a read-only connection
+                // is and offers to reopen rather than printing a refusal.
+                return Err(anyhow!(crate::dberror::DbError::new(
+                    crate::dberror::ErrorKind::AccessRefused,
+                    format!(
+                        "this connection is read-only, so `{}` was not run",
+                        statement.kind
+                    ),
+                )));
             }
         }
         Ok(())

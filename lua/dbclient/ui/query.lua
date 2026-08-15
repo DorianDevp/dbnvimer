@@ -209,6 +209,29 @@ local function session_for(bufnr)
   return target
 end
 
+--- Build the `on_error` handler for a query buffer.
+---
+--- Everything a good error message needs that the core cannot know: which
+--- buffer, its full text, and where in that text the failing statement began.
+--- With those three the server's character offset becomes a line and a column
+--- in the file the user is looking at.
+---@param bufnr integer
+---@param target table|nil
+---@param locate fun(): table|nil  the statement, once it is known
+---@return fun(err: string, detail: table|nil)
+local function on_failure(bufnr, target, locate)
+  return function(err, detail)
+    local statement = locate and locate() or nil
+    require("dbclient.errors").handle(err, detail, {
+      bufnr = bufnr,
+      source = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n"),
+      statement_offset = statement and statement.start,
+      session_id = target and target.id,
+      panel = true,
+    })
+  end
+end
+
 --- Run the statement at the cursor.
 function M.execute()
   local bufnr = vim.api.nvim_get_current_buf()
@@ -217,8 +240,10 @@ function M.execute()
     return
   end
 
+  local located
   client.async(function()
-    local sql = M.sql_at_cursor(bufnr)
+    local sql, statement = M.sql_at_cursor(bufnr)
+    located = statement
     if not sql or not sql:match("%S") then
       return notify("no SQL under the cursor", vim.log.levels.WARN)
     end
@@ -226,13 +251,13 @@ function M.execute()
       return notify("cancelled")
     end
 
+    require("dbclient.errors").clear_diagnostics(bufnr)
     local result = session.query(target.id, sql, config.get().ui.query_limit)
     results.show(result, { session_id = target.id, session_name = target.name, sql = sql })
     require("dbclient.history").record(target.name, sql)
-  end, function(err)
-    notify(err, vim.log.levels.ERROR)
-    M.set_diagnostics(bufnr, err)
-  end)
+  end, on_failure(bufnr, target, function()
+    return located
+  end))
 end
 
 --- Run every statement in the buffer, reporting one line per statement.
@@ -291,9 +316,7 @@ function M.execute_buffer()
       }, { session_id = target.id, session_name = target.name })
     end
     require("dbclient.history").record(target.name, sql)
-  end, function(err)
-    notify(err, vim.log.levels.ERROR)
-  end)
+  end, on_failure(bufnr, target, nil))
 end
 
 --- Show which rows the statement at the cursor would change.
@@ -327,8 +350,10 @@ function M.explain(analyze)
     return
   end
 
+  local located
   client.async(function()
-    local sql = M.sql_at_cursor(bufnr)
+    local sql, statement = M.sql_at_cursor(bufnr)
+    located = statement
     if not sql then
       return notify("no SQL under the cursor", vim.log.levels.WARN)
     end
@@ -337,9 +362,9 @@ function M.explain(analyze)
       sql = sql,
       analyze = analyze,
     })
-  end, function(err)
-    notify(err, vim.log.levels.ERROR)
-  end)
+  end, on_failure(bufnr, target, function()
+    return located
+  end))
 end
 
 -- ---------------------------------------------------------------------------
@@ -347,9 +372,10 @@ end
 -- ---------------------------------------------------------------------------
 
 --- Publish lint results as `vim.diagnostic` entries.
+--- Execution errors are not handled here — `dbclient.errors` places those at
+--- the position the server reported, which is the whole point of it.
 ---@param bufnr integer
----@param error_message string|nil  a server error to show at the cursor
-function M.set_diagnostics(bufnr, error_message)
+function M.set_diagnostics(bufnr)
   if not vim.api.nvim_buf_is_valid(bufnr) then
     return
   end
@@ -396,17 +422,6 @@ function M.set_diagnostics(bufnr, error_message)
         message = entry.message,
         code = entry.code,
         source = "dbclient",
-      })
-    end
-
-    if error_message then
-      local position = vim.api.nvim_win_get_cursor(0)
-      table.insert(diagnostics, {
-        lnum = position[1] - 1,
-        col = 0,
-        severity = vim.diagnostic.severity.ERROR,
-        message = error_message,
-        source = "server",
       })
     end
 

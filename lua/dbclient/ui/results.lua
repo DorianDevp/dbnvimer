@@ -93,9 +93,16 @@ function M.show(result, opts)
     table.insert(lines, "")
   end
 
+  -- Warnings the server raised on a statement that otherwise succeeded.
+  -- MySQL's "Data truncated for column 'x'" is silent data loss reported as a
+  -- warning, and clients that render it as a grey comment are why nobody sees
+  -- it.
+  local notice_lines = {}
   for _, notice in ipairs(view.notices) do
-    table.insert(lines, "-- " .. notice)
+    table.insert(lines, "! " .. notice)
+    table.insert(notice_lines, #lines - 1)
   end
+  view.notice_lines = notice_lines
 
   vim.bo[bufnr].filetype = "dbclient-result"
   buffer.set_lines(bufnr, lines)
@@ -115,7 +122,13 @@ function M.show(result, opts)
     nulls = nulls,
     stripes = config.get().ui.row_stripes,
   })
-  highlights.lines(bufnr, { { line = 0, group = "DBClientHeader" } }, highlights.ns_virt)
+  -- One call: `highlights.lines` clears its namespace first, so a loop would
+  -- leave only whichever mark went last.
+  local marks = { { line = 0, group = "DBClientHeader" } }
+  for _, line in ipairs(view.notice_lines or {}) do
+    table.insert(marks, { line = line, group = "DBClientSeverityWarn" })
+  end
+  highlights.lines(bufnr, marks, highlights.ns_virt)
 
   if first then
     M.attach(bufnr)
