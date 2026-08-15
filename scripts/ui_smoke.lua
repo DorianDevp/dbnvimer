@@ -54,6 +54,10 @@ require("dbclient").setup({
   detect = { enabled = false },
   store = { enabled = false },
   history = { enabled = false, path = workdir .. "/history.jsonl" },
+  -- Kept out of the user's real data directory: a smoke run should leave
+  -- nothing behind but the temporary directory it made.
+  export = { dir = workdir .. "/exports" },
+  store = { path = workdir .. "/connections.json" },
   connections = {
     shop = { adapter = "sqlite", path = db, color = "green" },
     shop_prod = { adapter = "sqlite", path = db, color = "red", access = "read" },

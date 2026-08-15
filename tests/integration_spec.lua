@@ -93,6 +93,10 @@ config.setup({
   detect = { enabled = false },
   store = { enabled = false },
   history = { enabled = false, path = workdir .. "/history.jsonl" },
+  -- This call replaces the sandbox `tests/run.lua` installed, so the paths that
+  -- get written to have to be restated here. Leaving them out sent snapshots
+  -- into the user's real data directory.
+  export = { dir = workdir .. "/exports" },
   connections = {
     testdb = { adapter = "sqlite", path = db_path },
   },

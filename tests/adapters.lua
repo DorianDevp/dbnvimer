@@ -388,6 +388,45 @@ local function suite(adapter, spec)
       end)
     end },
 
+    { "reports how many rows a plain statement touched", function()
+      run(function()
+        -- `affected_rows` belongs to the result set the driver is positioned
+        -- on, and MariaDB's adapter used to read it *after* draining the row
+        -- iterator — which had already moved past that set, so every UPDATE run
+        -- through `query` reported zero while changing everything.
+        local update = session.query(
+          target.id,
+          ("update %s.dbclient_items set note = 'counted' where id in (1, 2)"):format(schema)
+        )
+        t.eq(update.affected_rows, 2, "two rows matched, two reported")
+
+        local none = session.query(
+          target.id,
+          ("update %s.dbclient_items set note = 'x' where id = -1"):format(schema)
+        )
+        t.eq(none.affected_rows, 0, "and nothing matched means nothing reported")
+
+        -- A SELECT alongside it, to be sure the fix did not simply move the
+        -- wrong number somewhere else.
+        local rows = session.query(
+          target.id,
+          ("select id from %s.dbclient_items where note = 'counted' order by id"):format(schema)
+        )
+        t.eq(#rows.rows, 2, "the update really did land")
+
+        -- Put the fixture back: the suite is ordered and the transaction tests
+        -- below assert on these same rows.
+        session.query(
+          target.id,
+          ("update %s.dbclient_items set note = 'written' where id = 1"):format(schema)
+        )
+        session.query(
+          target.id,
+          ("update %s.dbclient_items set note = null where id = 2"):format(schema)
+        )
+      end)
+    end },
+
     { "refuses a stale update", function()
       run(function()
         local change = {

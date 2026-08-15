@@ -452,12 +452,37 @@ t.describe("replace SQL generation", {
     t.eq(replace.quote_literal("plain"), "'plain'")
   end,
 
+  ["doubles a backslash only where the server reads it as an escape"] = function()
+    -- MySQL and MariaDB treat a backslash in a string literal as an escape;
+    -- PostgreSQL with standard_conforming_strings does not, so doubling there
+    -- would put a real backslash into the data.
+    t.eq(replace.quote_literal("a\\b", "mysql"), "'a\\\\b'")
+    t.eq(replace.quote_literal("a\\b", "postgres"), "'a\\b'")
+  end,
+
+  ["never puts a backslash in the escape clause"] = function()
+    -- `escape '\\'` is an unterminated string on MySQL, which turned every
+    -- table in a 286-table schema into a syntax error.
+    local _, clause = replace.like_pattern("anything")
+    t.falsy(clause:find("\\", 1, true), "the escape clause is backslash free: " .. clause)
+
+    local sql = replace.count_sql(
+      { table = "t", columns = { "c" } },
+      "ACME",
+      "mysql",
+      "s"
+    )
+    t.falsy(sql:find("\\", 1, true), "and so is the generated query")
+  end,
+
   ["defangs LIKE wildcards in the needle"] = function()
     -- Searching for "100%" must not match every row.
-    local pattern = replace.like_pattern("100%")
-    t.eq(pattern, "%100\\%%")
-    t.eq((replace.like_pattern("a_b")), "%a\\_b%")
+    t.eq((replace.like_pattern("100%")), "%100!%%")
+    t.eq((replace.like_pattern("a_b")), "%a!_b%")
     t.eq((replace.like_pattern("plain")), "%plain%")
+    -- The escape character has to escape itself, or a needle containing one
+    -- silently eats the next character.
+    t.eq((replace.like_pattern("wow!")), "%wow!!%")
   end,
 
   ["counts every text column in one query"] = function()
@@ -468,8 +493,8 @@ t.describe("replace SQL generation", {
       "shop"
     )
     t.matches(sql, "^select ")
-    t.matches(sql, "`company` like '%%ACME%%' escape")
-    t.matches(sql, "`note` like '%%ACME%%' escape")
+    t.matches(sql, "`company` like '%%ACME%%' escape '!'")
+    t.matches(sql, "`note` like '%%ACME%%' escape '!'")
     t.matches(sql, "from `shop`%.`customer`$")
     t.eq(select(2, sql:gsub("from", "")), 1, "one query, not one per column")
   end,

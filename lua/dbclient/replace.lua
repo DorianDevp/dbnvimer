@@ -52,6 +52,14 @@ local function family(adapter)
   return "mysql"
 end
 
+--- The dialect behind a session.
+---@param session_id string
+---@return "mysql"|"postgres"|"sqlite"
+function M.dialect_for(session_id)
+  local target = session.require_session(session_id)
+  return family(target.info and target.info.adapter)
+end
+
 --- Quote an identifier for the dialect.
 ---@param name string
 ---@param dialect string
@@ -63,12 +71,30 @@ function M.quote_ident(name, dialect)
   return '"' .. name:gsub('"', '""') .. '"'
 end
 
---- Quote a string literal. Doubling the quote is the one escape every dialect
---- agrees on; backslash escaping is not, so it is not used.
+--- The LIKE escape character.
+---
+--- Deliberately not a backslash. MySQL and MariaDB treat a backslash inside a
+--- string literal as an escape character, so the obvious `escape '\\'` is an
+--- unterminated string and every one of 286 tables came back a syntax error.
+--- `!` needs no escaping in any dialect's string literals, and the needle's own
+--- exclamation marks are escaped along with the wildcards.
+local ESCAPE = "!"
+
+--- Quote a string literal.
+---
+--- Doubling the quote is the one escape every dialect agrees on. Backslash is
+--- where they part company: MySQL and MariaDB read it as an escape character,
+--- while PostgreSQL with `standard_conforming_strings` — the default for over a
+--- decade — reads it literally, so doubling there would insert a real one.
 ---@param text string
+---@param dialect? string
 ---@return string
-function M.quote_literal(text)
-  return "'" .. text:gsub("'", "''") .. "'"
+function M.quote_literal(text, dialect)
+  local out = text:gsub("'", "''")
+  if dialect == "mysql" then
+    out = out:gsub("\\", "\\\\")
+  end
+  return "'" .. out .. "'"
 end
 
 --- A LIKE pattern matching `needle` anywhere, with its wildcards defanged.
@@ -79,8 +105,8 @@ end
 ---@param needle string
 ---@return string clause_value, string escape_clause
 function M.like_pattern(needle)
-  local escaped = needle:gsub("([\\%%_])", "\\%1")
-  return "%" .. escaped .. "%", " escape '\\'"
+  local escaped = needle:gsub("([%%_" .. ESCAPE .. "])", ESCAPE .. "%1")
+  return "%" .. escaped .. "%", (" escape '%s'"):format(ESCAPE)
 end
 
 -- ---------------------------------------------------------------------------
@@ -143,7 +169,7 @@ end
 ---@return string
 function M.count_sql(group, needle, dialect, schema)
   local pattern, escape = M.like_pattern(needle)
-  local literal = M.quote_literal(pattern)
+  local literal = M.quote_literal(pattern, dialect)
 
   local selects = {}
   for _, column in ipairs(group.columns) do
@@ -167,8 +193,7 @@ end
 ---@param opts { session_id: string, schema: string, needle: string, tables?: string[], on_progress?: fun(done: integer, total: integer) }
 ---@return { hits: table[], total: integer, searched: integer, skipped: table[] }
 function M.search(opts)
-  local target = session.require_session(opts.session_id)
-  local dialect = family(target.info and target.info.adapter)
+  local dialect = M.dialect_for(opts.session_id)
   local groups = M.text_columns(opts)
 
   local hits, skipped = {}, {}
@@ -227,8 +252,8 @@ end
 function M.update_sql(hit, opts)
   local dialect = opts.dialect
   local column = M.quote_ident(hit.column, dialect)
-  local needle = M.quote_literal(opts.needle)
-  local replacement = M.quote_literal(opts.replacement)
+  local needle = M.quote_literal(opts.needle, dialect)
+  local replacement = M.quote_literal(opts.replacement, dialect)
   local pattern, escape = M.like_pattern(opts.needle)
 
   return ("update %s.%s set %s = replace(%s, %s, %s) where %s like %s%s"):format(
@@ -239,7 +264,7 @@ function M.update_sql(hit, opts)
     needle,
     replacement,
     column,
-    M.quote_literal(pattern),
+    M.quote_literal(pattern, dialect),
     escape
   )
 end
@@ -251,7 +276,7 @@ end
 ---@return { applied: table[], rows: integer }
 function M.apply(opts)
   local target = session.require_session(opts.session_id)
-  local dialect = family(target.info and target.info.adapter)
+  local dialect = M.dialect_for(opts.session_id)
 
   local already_open = target.in_transaction
   if not already_open then
@@ -397,6 +422,7 @@ function M.open(opts)
 
   notify(("searching %s…"):format(schema))
   client.async(function()
+    local dialect = M.dialect_for(target.id)
     local report = M.search({
       session_id = target.id,
       schema = schema,
@@ -434,12 +460,16 @@ function M.open(opts)
       if not hit then
         return
       end
-      local pattern = select(1, M.like_pattern(needle))
+      local pattern, escape = M.like_pattern(needle)
       require("dbclient.ui.data").open({
         session_id = target.id,
         schema = schema,
         table = hit.table,
-        filter = ("%s like %s escape '\\'"):format(hit.column, M.quote_literal(pattern)),
+        filter = ("%s like %s%s"):format(
+          M.quote_ident(hit.column, dialect),
+          M.quote_literal(pattern, dialect),
+          escape
+        ),
       })
     end, { buffer = bufnr, silent = true, desc = "DBClient: show the matching rows" })
 

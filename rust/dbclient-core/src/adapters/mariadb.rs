@@ -102,11 +102,17 @@ impl MariaDbSession {
             .map(|column| column.column_type())
             .collect::<Vec<_>>();
 
+        // Read the count *before* draining the iterator. `affected_rows` belongs
+        // to the result set the iterator is currently positioned on, and
+        // exhausting it moves past that set, so asking afterwards reports zero —
+        // which made every UPDATE run through `query` claim it had changed
+        // nothing while changing everything.
+        let affected = result.affected_rows();
+
         let mut rows = Vec::new();
         for row in result.by_ref() {
             rows.push(row_to_json(row?, columns.len(), &binary_flags, &types));
         }
-        let affected = result.affected_rows();
         let warnings = result.warnings();
         drop(result);
 
