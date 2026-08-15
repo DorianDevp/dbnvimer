@@ -323,6 +323,11 @@ Available everywhere; prefixed with `g:dbclient_leader` (default
     <leader>de       entity relationship diagram for a schema
     <leader>di       import a CSV into a table
     <leader>dv       compare result sets or connections
+    <leader>d<CR>    quick query: type SQL, get rows
+    <leader>df       saved queries
+    <leader>dS       save the current query
+    <leader>d[       back along the navigation trail
+    <leader>d]       forward along the navigation trail
 
 SIDEBAR
 
@@ -369,7 +374,11 @@ key.
 
     K                inspect the full cell value
     gd               follow the foreign key under the cursor
-    gu               find rows referencing this one
+    gU               open the rows that reference this one
+    gu               list referencing rows in the quickfix
+    g[               back along the navigation trail
+    g]               forward along the navigation trail
+    gb               jump to any point on the trail
     gs               statistics for this column
     gS               sort by this column
     gf               filter rows with a WHERE expression
@@ -392,6 +401,22 @@ key.
     [p               previous page
     g?               show this help
 
+QUICK QUERY
+
+A tab holding a SQL buffer above its results. Nothing is named or saved
+until you ask: type, run, read, move on. `<CR>` in normal mode runs the
+statement under the cursor, so a one-liner is three keystrokes from
+anywhere.
+
+    <CR>             run the statement under the cursor
+    <C-CR>           run it [ni]
+    <leader>dQ       run every statement
+    gs               save this query
+    gf               open a saved query
+    gc               run against another connection
+    q                close the tab
+    g?               show this help
+
 QUERY BUFFER
 
 A real `sql` buffer, so treesitter, completion and your own mappings apply.
@@ -405,6 +430,26 @@ comments, dollar quoting and `DELIMITER`.
     <leader>dE       explain analyze the statement
     K                describe the table or column under the cursor
     gd               open the DDL for the table under the cursor
+    gs               save this query
+    gf               open a saved query
+    g?               show this help
+
+SAVED QUERIES
+
+Saved queries are `.sql` files with a `-- @name:` header, kept per project
+and globally. They are files, so they grep, diff and commit like anything
+else.
+
+    <CR>             open the query
+    o                open the query
+    r                run it without opening it
+    n                write a new query
+    e                rename it
+    x                delete it
+    y                yank the SQL
+    p                move between project and global
+    gr               rescan the query directories
+    q                close the browser
     g?               show this help
 
 RESULT BUFFER

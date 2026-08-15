@@ -18,6 +18,7 @@ local help = require("dbclient.ui.help")
 local highlights = require("dbclient.ui.highlights")
 local keymap = require("dbclient.keymap")
 local session = require("dbclient.session")
+local trail = require("dbclient.trail")
 local value_inspector = require("dbclient.ui.value")
 local window = require("dbclient.ui.window")
 local winbar = require("dbclient.ui.winbar")
@@ -308,7 +309,7 @@ local function load(view)
 end
 
 --- Open a table in a data buffer.
----@param opts { session_id?: string, schema: string, table: string, limit?: integer, offset?: integer, filter?: string, sort?: table[], split?: string }
+---@param opts { session_id?: string, schema: string, table: string, limit?: integer, offset?: integer, filter?: string, sort?: table[], split?: string, via?: string }
 function M.open(opts)
   local target = session.get(opts.session_id)
   if not target then
@@ -347,6 +348,20 @@ function M.open(opts)
 
   M.views[bufnr] = view
   vim.bo[bufnr].filetype = "dbclient-data"
+
+  -- Every place you land is a point on the trail, so `g[` can walk back
+  -- through a chain of foreign key jumps rather than one step.
+  trail.push({
+    session_id = target.id,
+    connection = target.name,
+    schema = view.schema,
+    table = view.table,
+    filter = view.filter,
+    sort = view.sort,
+    limit = view.limit,
+    offset = view.offset,
+    via = opts.via,
+  })
 
   buffer.show(bufnr, opts.split or "botright split")
   vim.wo.cursorline = true
@@ -660,7 +675,89 @@ function M.follow_fk()
     table = reference.ref_table,
     filter = ("%s = '%s'"):format(reference.ref_column, literal),
     split = "botright split",
+    via = ("%s.%s"):format(cell.view.table, cell.column.name),
   })
+end
+
+--- Open the rows of another table that reference this one.
+---
+--- The forward direction is `gd`; this is the same move backwards along the
+--- graph, and it is just as common a question.
+function M.follow_reverse()
+  local cell = M.current_cell()
+  if not cell then
+    return
+  end
+
+  local view = cell.view
+  if #view.primary == 0 then
+    return notify("this table has no primary key", vim.log.levels.WARN)
+  end
+
+  client.async(function()
+    local references = session.referencing_keys(view.session_id, view.schema, view.table)
+    if #references == 0 then
+      return notify("nothing references this table")
+    end
+
+    local pk_values = {}
+    for index, column in ipairs(view.columns) do
+      for _, name in ipairs(view.primary) do
+        if column.name == name then
+          pk_values[name] = view.rows[cell.row_index][index]
+        end
+      end
+    end
+
+    local choices = {}
+    for _, reference in ipairs(references) do
+      local value = pk_values[reference.ref_column]
+      if value ~= nil and value ~= vim.NIL then
+        table.insert(choices, {
+          reference = reference,
+          value = tostring(value),
+          label = ("%s.%s  on %s"):format(
+            reference.schema,
+            reference.table,
+            reference.column
+          ),
+        })
+      end
+    end
+
+    if #choices == 0 then
+      return notify("no usable key on this row", vim.log.levels.WARN)
+    end
+
+    local function go(choice)
+      vim.cmd("normal! m'")
+      M.open({
+        session_id = view.session_id,
+        schema = choice.reference.schema,
+        table = choice.reference.table,
+        filter = ("%s = '%s'"):format(choice.reference.column, choice.value:gsub("'", "''")),
+        split = "botright split",
+        via = ("← %s"):format(view.table),
+      })
+    end
+
+    if #choices == 1 then
+      return go(choices[1])
+    end
+
+    vim.ui.select(choices, {
+      prompt = "referencing rows in",
+      format_item = function(choice)
+        return choice.label
+      end,
+    }, function(choice)
+      if choice then
+        go(choice)
+      end
+    end)
+  end, function(err)
+    notify(err, vim.log.levels.ERROR)
+  end)
 end
 
 --- Populate the quickfix list with rows referencing the current one.
@@ -951,6 +1048,14 @@ function M.handlers()
     open_ddl = M.open_ddl,
     generate = M.generate,
     import = M.import,
+    follow_reverse = M.follow_reverse,
+    trail_back = function()
+      trail.back()
+    end,
+    trail_forward = function()
+      trail.forward()
+    end,
+    trail_pick = trail.pick,
     next_cell = function()
       M.next_cell(1)
     end,

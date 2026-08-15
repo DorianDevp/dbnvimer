@@ -43,7 +43,7 @@ always one line.
 
 Early software under active development, built with AI-assisted rapid
 development. The core protocol, the editable data buffer and the safety rails
-are covered by tests: 43 Rust, 143 Lua including an end-to-end suite driving
+are covered by tests: 43 Rust, 178 Lua including an end-to-end suite driving
 real buffers, and 32 adapter tests each against a live PostgreSQL and MariaDB
 server. The adapters still want exercising against real production schemas
 before a 1.0.
@@ -189,6 +189,10 @@ matters, so several things guard against it:
 | `:DBClientData [schema.]table` | open a table's data buffer |
 | `:DBClientQuery` | run the statement at the cursor |
 | `:DBClientQueryBuffer` | open the scratch query buffer |
+| `:DBClientScratch [sql]` | quick query tab: type, run, read |
+| `:DBClientQueries` | browse saved queries |
+| `:DBClientSaveQuery [name]` | save the current query |
+| `:DBClientTrail` / `:DBClientBack [n]` / `:DBClientForward [n]` | navigation trail |
 | `:DBClientExplain[!]` | explain the statement (`!` for `ANALYZE`) |
 | `:DBClientBegin` / `:DBClientCommit` / `:DBClientRollback` | session transactions |
 | `:DBClientCancel` | cancel the running statement on the server |
@@ -249,6 +253,11 @@ Available everywhere; prefixed with `g:dbclient_leader` (default `<leader>d`).
 | `<leader>de` | entity relationship diagram for a schema |
 | `<leader>di` | import a CSV into a table |
 | `<leader>dv` | compare result sets or connections |
+| `<leader>d<CR>` | quick query: type SQL, get rows |
+| `<leader>df` | saved queries |
+| `<leader>dS` | save the current query |
+| `<leader>d[` | back along the navigation trail |
+| `<leader>d]` | forward along the navigation trail |
 
 ### Sidebar
 
@@ -293,7 +302,11 @@ Only navigation and inspection are mapped, so nothing shadows an editing key.
 | --- | --- |
 | `K` | inspect the full cell value |
 | `gd` | follow the foreign key under the cursor |
-| `gu` | find rows referencing this one |
+| `gU` | open the rows that reference this one |
+| `gu` | list referencing rows in the quickfix |
+| `g[` | back along the navigation trail |
+| `g]` | forward along the navigation trail |
+| `gb` | jump to any point on the trail |
 | `gs` | statistics for this column |
 | `gS` | sort by this column |
 | `gf` | filter rows with a WHERE expression |
@@ -316,6 +329,21 @@ Only navigation and inspection are mapped, so nothing shadows an editing key.
 | `[p` | previous page |
 | `g?` | show this help |
 
+### Quick query
+
+A tab holding a SQL buffer above its results. Nothing is named or saved until you ask: type, run, read, move on. `<CR>` in normal mode runs the statement under the cursor, so a one-liner is three keystrokes from anywhere.
+
+| key | action |
+| --- | --- |
+| `<CR>` | run the statement under the cursor |
+| `<C-CR>` | run it _(n, i)_ |
+| `<leader>dQ` | run every statement |
+| `gs` | save this query |
+| `gf` | open a saved query |
+| `gc` | run against another connection |
+| `q` | close the tab |
+| `g?` | show this help |
+
 ### Query buffer
 
 A real `sql` buffer, so treesitter, completion and your own mappings apply. Statements are split by the core, which understands string literals, comments, dollar quoting and `DELIMITER`.
@@ -329,6 +357,26 @@ A real `sql` buffer, so treesitter, completion and your own mappings apply. Stat
 | `<leader>dE` | explain analyze the statement |
 | `K` | describe the table or column under the cursor |
 | `gd` | open the DDL for the table under the cursor |
+| `gs` | save this query |
+| `gf` | open a saved query |
+| `g?` | show this help |
+
+### Saved queries
+
+Saved queries are `.sql` files with a `-- @name:` header, kept per project and globally. They are files, so they grep, diff and commit like anything else.
+
+| key | action |
+| --- | --- |
+| `<CR>` | open the query |
+| `o` | open the query |
+| `r` | run it without opening it |
+| `n` | write a new query |
+| `e` | rename it |
+| `x` | delete it |
+| `y` | yank the SQL |
+| `p` | move between project and global |
+| `gr` | rescan the query directories |
+| `q` | close the browser |
 | `g?` | show this help |
 
 ### Result buffer
@@ -419,6 +467,56 @@ Available in data and result buffers, in operator-pending and visual mode.
 | `aC` | a column, including its separator |
 
 <!-- keys:stop -->
+
+## Walking the relations
+
+A foreign key is an edge, so following one should feel like following a link.
+
+- `gd` on a foreign key cell opens the referenced row.
+- `gU` goes the other way: the rows in other tables that reference this one.
+- `gu` puts every referencing table into the quickfix list with counts.
+
+Because a graph walk is rarely one step, each place you land is recorded on a
+**trail**: the table plus the filter, sort and page you were looking at.
+
+```
+main.customers › main.orders › [main.customers[id = 1]]
+```
+
+- `g[` back, `g]` forward — with a count, so `2g[` goes from `z` straight to `x`
+- `gb` opens the whole trail and jumps to any point in it
+- the breadcrumb sits in the winbar, so you always know where you are
+
+Navigating from a rewound position drops the forward branch, the way a browser
+does. Restoring a place reconstructs the view rather than hoping a buffer
+survived, so going back to an unfiltered table really is unfiltered.
+
+## Quick queries and saved queries
+
+`<leader>d<CR>` opens a **quick query tab**: a SQL buffer above its results.
+Nothing is named or saved until you ask — type, `<CR>`, read, move on. `gs`
+promotes whatever is in it to a saved query without retyping it.
+
+`<leader>df` opens the **saved queries** browser. Saved queries are `.sql` files
+with a small header:
+
+```sql
+-- @name: overdue invoices
+-- @conn: staging
+-- @desc: everything unpaid past its due date
+-- @tags: billing, support
+
+select * from invoices where paid_at is null and due_at < now();
+```
+
+They live in two places and `p` moves one between them:
+
+| scope | where | who |
+| --- | --- | --- |
+| project | `.dbclient/queries/` in the repository | the team, through git |
+| global | `stdpath("data")/dbclient/queries/` | you |
+
+Being files means they grep, diff, review and commit like everything else.
 
 ## Notebooks
 

@@ -617,6 +617,194 @@ t.describe("integration: notebooks, diagrams and import", {
     end)
   end },})
 
+t.describe("integration: relation walking and the trail", {
+  { "follows a foreign key and records where it came from", function()
+    local trail = require("dbclient.trail")
+    trail.clear()
+
+    -- Start on orders, which references customers.
+    data.open({ session_id = connected.id, schema = "main", table = "orders" })
+    local orders
+    wait_for(function()
+      for _, candidate in pairs(data.views) do
+        if candidate.table == "orders" and (candidate.generation or 0) > 0 then
+          orders = candidate
+          return true
+        end
+      end
+    end, 8000, "orders buffer")
+
+    t.eq(#trail.entries, 1)
+    t.eq(trail.current().table, "orders")
+
+    -- The FK metadata has to be there for `gd` to have anything to follow.
+    t.ok(orders.fk.customer_id, "customer_id should be known as a foreign key")
+    t.eq(orders.fk.customer_id.ref_table, "customers")
+
+    -- Put the cursor on the customer_id cell of the first row and follow it.
+    local column_index
+    for index, column in ipairs(orders.columns) do
+      if column.name == "customer_id" then
+        column_index = index
+      end
+    end
+    vim.api.nvim_win_set_cursor(0, {
+      data.HEADER_LINES + 1,
+      orders.spans[column_index].start,
+    })
+
+    local cell = data.current_cell()
+    t.eq(cell.column.name, "customer_id")
+
+    data.follow_fk()
+    wait_for(function()
+      return trail.current() and trail.current().table == "customers"
+    end, 8000, "foreign key jump")
+
+    local landed = trail.current()
+    t.eq(landed.table, "customers")
+    t.matches(landed.filter, "id = ")
+    t.eq(landed.via, "orders.customer_id", "the trail records how we got here")
+  end },
+
+  { "walks a chain and steps back through it", function()
+    local trail = require("dbclient.trail")
+    trail.clear()
+
+    -- customers > orders > customers, three places on the trail.
+    data.open({ session_id = connected.id, schema = "main", table = "customers", filter = "" })
+    wait_for(function()
+      return trail.current() and trail.current().table == "customers"
+    end, 8000, "first place")
+
+    data.open({
+      session_id = connected.id,
+      schema = "main",
+      table = "orders",
+      filter = "",
+      via = "customers.id",
+    })
+    wait_for(function()
+      return trail.current() and trail.current().table == "orders"
+    end, 8000, "second place")
+
+    data.open({
+      session_id = connected.id,
+      schema = "main",
+      table = "customers",
+      filter = "id = 1",
+      via = "orders.customer_id",
+    })
+    wait_for(function()
+      return trail.current() and trail.current().filter == "id = 1"
+    end, 8000, "third place")
+
+    t.eq(#trail.entries, 3)
+
+    -- From z straight back to x, which is the whole point.
+    trail.back(2)
+    wait_for(function()
+      return not trail.restoring
+    end, 8000, "restore")
+    t.eq(trail.index, 1)
+    t.eq(trail.current().table, "customers")
+    t.eq(trail.current().filter, nil)
+
+    -- And forward again.
+    trail.forward(1)
+    wait_for(function()
+      return not trail.restoring
+    end, 8000, "restore forward")
+    t.eq(trail.current().table, "orders")
+
+    -- Navigating from here drops what was ahead.
+    data.open({ session_id = connected.id, schema = "main", table = "customers", filter = "id = 3" })
+    wait_for(function()
+      return trail.current() and trail.current().filter == "id = 3"
+    end, 8000, "new branch")
+    t.eq(#trail.entries, 3, "the forward branch is replaced, not appended to")
+    t.falsy(trail.can_go_forward())
+  end },
+
+  { "restoring a place does not extend the trail", function()
+    local trail = require("dbclient.trail")
+    local before = #trail.entries
+    trail.back(1)
+    wait_for(function()
+      return not trail.restoring
+    end, 8000, "restore")
+    t.eq(#trail.entries, before, "going back must not push a new place")
+  end },
+
+  { "the breadcrumb names the chain", function()
+    local trail = require("dbclient.trail")
+    local crumb = trail.breadcrumb()
+    t.matches(crumb, "main%.customers")
+    t.matches(crumb, "›")
+    t.matches(crumb, "%[", "the current place is bracketed")
+  end },})
+
+t.describe("integration: quick query and saved queries", {
+  { "the quick query tab runs and shows rows", function()
+    local scratch = require("dbclient.ui.scratch")
+    local tabs_before = #vim.api.nvim_list_tabpages()
+
+    local bufnr = scratch.open({ session_id = connected.id })
+    t.ok(bufnr, "the tab should have a query buffer")
+    t.eq(#vim.api.nvim_list_tabpages(), tabs_before + 1)
+
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "select count(*) as n from customers;" })
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
+
+    -- `<CR>` is mapped to run in this buffer.
+    local mapped = false
+    for _, entry in ipairs(vim.api.nvim_buf_get_keymap(bufnr, "n")) do
+      if entry.lhs == "<CR>" then
+        mapped = true
+      end
+    end
+    t.ok(mapped, "<CR> should run the statement")
+
+    require("dbclient.ui.query").execute()
+    wait_for(function()
+      local results = vim.fn.bufnr("dbclient://results")
+      return results > 0 and #vim.api.nvim_buf_get_lines(results, 0, -1, false) > 3
+    end, 8000, "quick query results")
+
+    local text = table.concat(
+      vim.api.nvim_buf_get_lines(vim.fn.bufnr("dbclient://results"), 0, -1, false),
+      "\n"
+    )
+    t.matches(text, "n")
+
+    scratch.close(connected.id)
+    t.eq(#vim.api.nvim_list_tabpages(), tabs_before)
+  end },
+
+  { "a query can be saved and opened again", function()
+    local queries = require("dbclient.queries")
+    local path, err = queries.save({
+      name = "integration saved",
+      sql = "select 1 as one;",
+      connection = connected.name,
+      description = "written by the test",
+      scope = "global",
+    })
+    t.ok(path, tostring(err))
+
+    local found = queries.find("integration saved")
+    t.eq(found.sql, "select 1 as one;")
+    t.eq(found.connection, connected.name)
+
+    -- Opening it puts the SQL into the quick query tab.
+    local scratch = require("dbclient.ui.scratch")
+    local bufnr = scratch.open({ session_id = connected.id, sql = found.sql })
+    t.eq(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "select 1 as one;")
+
+    scratch.close(connected.id)
+    queries.delete(found.path)
+  end },})
+
 t.describe("integration: shutdown", {
   { "closing a session leaves the daemon healthy", function()
     session.disconnect(connected.id)

@@ -112,7 +112,13 @@ function M.render(bufnr)
     table.insert(parts, segment(" TX ", "DBClientTransaction"))
   end
 
-  if target.info and target.info.database then
+  -- The trail says where you came from, which matters more than the database
+  -- name once you are several foreign keys deep.
+  local trail = require("dbclient.trail")
+  local breadcrumb = #trail.entries > 1 and trail.breadcrumb({ width = 70 }) or nil
+  if breadcrumb and breadcrumb ~= "" then
+    table.insert(parts, segment(" " .. breadcrumb .. " ", "DBClientFk"))
+  elseif target.info and target.info.database then
     table.insert(parts, segment((" %s "):format(target.info.database), "DBClientSchema"))
   end
 

@@ -58,16 +58,39 @@ function M.set_lines(bufnr, lines)
   vim.bo[bufnr].modified = false
 end
 
+--- Windows showing `bufnr`, preferring the current tab page.
+---
+--- Searching every tab would teleport the user out of the tab they are working
+--- in, which is exactly the wrong thing when the quick-query tab has its own
+--- result window.
+---@param bufnr integer
+---@return integer[]
+function M.windows(bufnr)
+  local here, elsewhere = {}, {}
+  local current_tab = vim.api.nvim_get_current_tabpage()
+
+  for _, win in ipairs(vim.api.nvim_list_wins()) do
+    if vim.api.nvim_win_get_buf(win) == bufnr then
+      if vim.api.nvim_win_get_tabpage(win) == current_tab then
+        table.insert(here, win)
+      else
+        table.insert(elsewhere, win)
+      end
+    end
+  end
+
+  return #here > 0 and here or elsewhere
+end
+
 --- Show a buffer, reusing its window when one is already open.
 ---@param bufnr integer
 ---@param command string  window command, e.g. `botright 14split`
 ---@return integer winid
 function M.show(bufnr, command)
-  for _, win in ipairs(vim.api.nvim_list_wins()) do
-    if vim.api.nvim_win_get_buf(win) == bufnr then
-      vim.api.nvim_set_current_win(win)
-      return win
-    end
+  local existing = M.windows(bufnr)[1]
+  if existing then
+    vim.api.nvim_set_current_win(existing)
+    return existing
   end
 
   vim.cmd(command)
@@ -83,11 +106,10 @@ function M.focus(bufnr)
   if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
     return false
   end
-  for _, win in ipairs(vim.api.nvim_list_wins()) do
-    if vim.api.nvim_win_get_buf(win) == bufnr then
-      vim.api.nvim_set_current_win(win)
-      return true
-    end
+  local existing = M.windows(bufnr)[1]
+  if existing then
+    vim.api.nvim_set_current_win(existing)
+    return true
   end
   return false
 end
@@ -95,8 +117,8 @@ end
 --- Close every window showing `bufnr`, keeping the buffer alive.
 ---@param bufnr integer
 function M.hide(bufnr)
-  for _, win in ipairs(vim.api.nvim_list_wins()) do
-    if vim.api.nvim_win_get_buf(win) == bufnr and #vim.api.nvim_list_wins() > 1 then
+  for _, win in ipairs(M.windows(bufnr)) do
+    if #vim.api.nvim_tabpage_list_wins(vim.api.nvim_win_get_tabpage(win)) > 1 then
       pcall(vim.api.nvim_win_close, win, false)
     end
   end

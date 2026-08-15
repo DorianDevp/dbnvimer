@@ -528,6 +528,18 @@ function M.attach(bufnr)
     end,
     hover = M.hover,
     goto_definition = M.goto_definition,
+    save = function()
+      local bound = M.buffers[bufnr]
+      local target = bound and session.get(bound.session_id) or session.current()
+      require("dbclient.queries").prompt_save({
+        sql = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n"),
+        connection = target and target.name,
+      })
+    end,
+    saved_queries = function()
+      local bound = M.buffers[bufnr]
+      require("dbclient.ui.queries").open({ session_id = bound and bound.session_id })
+    end,
     help = help.handler("query"),
   })
 

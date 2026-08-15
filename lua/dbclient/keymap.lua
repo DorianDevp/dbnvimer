@@ -44,6 +44,11 @@ M.groups = {
       { lhs = "e", action = "diagram", desc = "entity relationship diagram for a schema" },
       { lhs = "i", action = "import", desc = "import a CSV into a table" },
       { lhs = "v", action = "compare", desc = "compare result sets or connections" },
+      { lhs = "<CR>", action = "scratch", desc = "quick query: type SQL, get rows" },
+      { lhs = "f", action = "saved_queries", desc = "saved queries" },
+      { lhs = "S", action = "save_query", desc = "save the current query" },
+      { lhs = "[", action = "trail_back", desc = "back along the navigation trail" },
+      { lhs = "]", action = "trail_forward", desc = "forward along the navigation trail" },
     },
   },
 
@@ -94,7 +99,11 @@ Only navigation and inspection are mapped, so nothing shadows an editing key.]],
     keys = {
       { lhs = "K", action = "inspect_value", desc = "inspect the full cell value" },
       { lhs = "gd", action = "follow_fk", desc = "follow the foreign key under the cursor" },
-      { lhs = "gu", action = "find_references", desc = "find rows referencing this one" },
+      { lhs = "gU", action = "follow_reverse", desc = "open the rows that reference this one" },
+      { lhs = "gu", action = "find_references", desc = "list referencing rows in the quickfix" },
+      { lhs = "g[", action = "trail_back", desc = "back along the navigation trail" },
+      { lhs = "g]", action = "trail_forward", desc = "forward along the navigation trail" },
+      { lhs = "gb", action = "trail_pick", desc = "jump to any point on the trail" },
       { lhs = "gs", action = "column_stats", desc = "statistics for this column" },
       { lhs = "gS", action = "sort_column", desc = "sort by this column" },
       { lhs = "gf", action = "filter", desc = "filter rows with a WHERE expression" },
@@ -119,6 +128,44 @@ Only navigation and inspection are mapped, so nothing shadows an editing key.]],
     },
   },
 
+  scratch = {
+    title = "Quick query",
+    description = [[
+A tab holding a SQL buffer above its results. Nothing is named or saved until
+you ask: type, run, read, move on. `<CR>` in normal mode runs the statement
+under the cursor, so a one-liner is three keystrokes from anywhere.]],
+    keys = {
+      { lhs = "<CR>", action = "execute", desc = "run the statement under the cursor" },
+      { lhs = "<C-CR>", action = "execute", desc = "run it", mode = { "n", "i" } },
+      { lhs = "<leader>dQ", action = "execute_buffer", desc = "run every statement" },
+      { lhs = "gs", action = "save", desc = "save this query" },
+      { lhs = "gf", action = "saved_queries", desc = "open a saved query" },
+      { lhs = "gc", action = "pick_connection", desc = "run against another connection" },
+      { lhs = "q", action = "close", desc = "close the tab" },
+      { lhs = "g?", action = "help", desc = "show this help" },
+    },
+  },
+
+  queries = {
+    title = "Saved queries",
+    description = [[
+Saved queries are `.sql` files with a `-- @name:` header, kept per project and
+globally. They are files, so they grep, diff and commit like anything else.]],
+    keys = {
+      { lhs = "<CR>", action = "open", desc = "open the query" },
+      { lhs = "o", action = "open", desc = "open the query" },
+      { lhs = "r", action = "run", desc = "run it without opening it" },
+      { lhs = "n", action = "new", desc = "write a new query" },
+      { lhs = "e", action = "rename", desc = "rename it" },
+      { lhs = "x", action = "delete", desc = "delete it" },
+      { lhs = "y", action = "yank", desc = "yank the SQL" },
+      { lhs = "p", action = "promote", desc = "move between project and global" },
+      { lhs = "gr", action = "refresh", desc = "rescan the query directories" },
+      { lhs = "q", action = "close", desc = "close the browser" },
+      { lhs = "g?", action = "help", desc = "show this help" },
+    },
+  },
+
   query = {
     title = "Query buffer",
     description = [[
@@ -133,6 +180,8 @@ dollar quoting and `DELIMITER`.]],
       { lhs = "<leader>dE", action = "explain_analyze", desc = "explain analyze the statement" },
       { lhs = "K", action = "hover", desc = "describe the table or column under the cursor" },
       { lhs = "gd", action = "goto_definition", desc = "open the DDL for the table under the cursor" },
+      { lhs = "gs", action = "save", desc = "save this query" },
+      { lhs = "gf", action = "saved_queries", desc = "open a saved query" },
       { lhs = "g?", action = "help", desc = "show this help" },
     },
   },
@@ -233,7 +282,9 @@ M.order = {
   "global",
   "sidebar",
   "data",
+  "scratch",
   "query",
+  "queries",
   "result",
   "ddl",
   "explain",

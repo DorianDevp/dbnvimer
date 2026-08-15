@@ -184,6 +184,52 @@ for _, text in ipairs(require("dbclient.keymap").help_lines("data")) do
   print("  " .. text)
 end
 
+-- 8b. Relation walking, the trail and the quick query tab.
+local trail = require("dbclient.trail")
+trail.clear()
+vim.cmd("DBClientData main.customers")
+wait(function()
+  return trail.current() and trail.current().table == "customers"
+end, "first place")
+vim.cmd("DBClientData main.orders")
+wait(function()
+  return trail.current() and trail.current().table == "orders"
+end, "second place")
+require("dbclient.ui.data").open({
+  session_id = target.id,
+  schema = "main",
+  table = "customers",
+  filter = "id = 1",
+  via = "orders.customer_id",
+})
+wait(function()
+  return trail.current() and trail.current().filter == "id = 1"
+end, "third place")
+
+print("")
+print("── trail " .. string.rep("─", 62))
+print("  breadcrumb: " .. trail.breadcrumb())
+for _, item in ipairs(trail.list()) do
+  print("  " .. item.label)
+end
+print("  g[ cofa, g] do przodu, gb wybiera dowolny punkt")
+
+local scratch = require("dbclient.ui.scratch")
+local scratch_buf = scratch.open({ session_id = target.id, sql = "select city, count(*) from customers group by city;" })
+dump("quick query tab", scratch_buf)
+scratch.close(target.id)
+
+local queries = require("dbclient.queries")
+queries.save({ name = "customers by city", sql = "select city, count(*) from customers group by city;",
+  connection = "shop", description = "how many per country", scope = "global" })
+queries.save({ name = "recent orders", sql = "select * from orders order by placed_at desc limit 20;",
+  connection = "shop", scope = "global" })
+require("dbclient.ui.queries").open({ session_id = target.id })
+dump("saved queries", vim.fn.bufnr("dbclient://queries"))
+for _, entry in ipairs(queries.list()) do
+  queries.delete(entry.path)
+end
+
 -- 9. Connection manager rendering.
 vim.cmd("DBClientConnections")
 local manager = vim.fn.bufnr("dbclient://connections")

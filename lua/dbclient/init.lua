@@ -327,6 +327,49 @@ local function define_commands()
     require("dbclient.workspace").clear()
   end, { force = true, desc = "Forget the saved workspace" })
 
+  command("DBClientScratch", function(args)
+    require("dbclient.ui.scratch").open({ sql = args.args ~= "" and args.args or nil })
+  end, { nargs = "*", force = true, desc = "Quick query tab" })
+
+  command("DBClientQueries", function()
+    require("dbclient.ui.queries").open()
+  end, { force = true, desc = "Browse saved queries" })
+
+  command("DBClientSaveQuery", function(args)
+    local bufnr = vim.api.nvim_get_current_buf()
+    local bound = query().buffers[bufnr]
+    local target = bound and session.get(bound.session_id) or session.current()
+    local sql = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
+
+    if args.args ~= "" then
+      local path, err = require("dbclient.queries").save({
+        name = args.args,
+        sql = sql,
+        connection = target and target.name,
+        scope = "global",
+      })
+      return notify(path and ("saved to " .. path) or tostring(err),
+        path and vim.log.levels.INFO or vim.log.levels.ERROR)
+    end
+
+    require("dbclient.queries").prompt_save({
+      sql = sql,
+      connection = target and target.name,
+    })
+  end, { nargs = "?", force = true, desc = "Save the current query" })
+
+  command("DBClientTrail", function()
+    require("dbclient.trail").pick()
+  end, { force = true, desc = "Jump to any point on the navigation trail" })
+
+  command("DBClientBack", function(args)
+    require("dbclient.trail").back(tonumber(args.args) or 1)
+  end, { nargs = "?", force = true, desc = "Back along the navigation trail" })
+
+  command("DBClientForward", function(args)
+    require("dbclient.trail").forward(tonumber(args.args) or 1)
+  end, { nargs = "?", force = true, desc = "Forward along the navigation trail" })
+
   command("DBClientHelp", function()
     require("dbclient.ui.help").show_all()
   end, { force = true })
@@ -522,6 +565,27 @@ local function global_handlers()
           table = choice.table,
         })
       end)
+    end,
+    scratch = function()
+      require("dbclient.ui.scratch").toggle()
+    end,
+    saved_queries = function()
+      require("dbclient.ui.queries").open()
+    end,
+    save_query = function()
+      local bufnr = vim.api.nvim_get_current_buf()
+      local bound = query().buffers[bufnr]
+      local target = bound and session.get(bound.session_id) or session.current()
+      require("dbclient.queries").prompt_save({
+        sql = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n"),
+        connection = target and target.name,
+      })
+    end,
+    trail_back = function()
+      require("dbclient.trail").back()
+    end,
+    trail_forward = function()
+      require("dbclient.trail").forward()
     end,
     compare = function()
       vim.ui.select({

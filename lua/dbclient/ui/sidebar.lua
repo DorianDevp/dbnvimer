@@ -283,10 +283,13 @@ function M.open_node()
   end
 
   if node.kind == "table" then
+    -- From the tree, an empty filter means "the whole table"; a filtered view
+    -- is something you get to by navigating, and you get back to it with `g[`.
     return require("dbclient.ui.data").open({
       session_id = node.session_id,
       schema = node.schema,
       table = node.table,
+      filter = "",
     })
   end
 
@@ -342,6 +345,7 @@ function M.open_data()
       session_id = node.session_id,
       schema = node.schema,
       table = node.table,
+      filter = "",
     })
   end
 end

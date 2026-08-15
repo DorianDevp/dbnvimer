@@ -132,6 +132,24 @@ binary will be rejected with a clear message rather than misbehaving.
   covers DBClient's own writes and says so: a deleted row's other columns were
   never read, so it is not offered as recoverable.
 
+### Navigating and writing queries
+
+- **Quick query tab** (`<leader>d<CR>`): a SQL buffer above its results, in its
+  own tab page. Nothing is named or saved until you ask; `<CR>` runs the
+  statement under the cursor, and `gs` promotes it to a saved query.
+- **Saved queries** (`<leader>df`), kept as `.sql` files with a small header,
+  in two scopes: `.dbclient/queries/` beside the project, which the team shares
+  through the repository, and a global store that is yours. `p` moves one
+  between them. They are files, so they grep, diff and commit.
+- **Walking relations**: `gd` follows a foreign key, `gU` goes the other way to
+  the rows that reference this one, and `gu` lists every referencing table in
+  the quickfix.
+- **A navigation trail** behind those jumps. Each place — table plus filter,
+  sort and page — is recorded, `g[` and `g]` walk it, a count jumps several
+  steps at once, and `gb` opens the whole trail to jump anywhere in it. The
+  breadcrumb sits in the winbar. Navigating from a rewound position drops the
+  forward branch, the way a browser does.
+
 ### Workspaces and diagnostics
 
 - **`:DBClientWorkspaceSave` / `Restore`** remember which connections are open,
@@ -148,7 +166,7 @@ binary will be rejected with a clear message rather than misbehaving.
 
 ### Testing
 
-- 43 Rust unit tests, 143 Lua tests (including an end-to-end suite driving real
+- 43 Rust unit tests, 178 Lua tests (including an end-to-end suite driving real
   buffers against a real database), and 32 adapter tests each against a live
   PostgreSQL and MariaDB server.
 - `scripts/protocol_smoke.py` exercises the wire protocol over stdio.
