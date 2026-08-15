@@ -533,13 +533,22 @@ function M.write()
         outcome.applied,
         outcome.affected_rows
       ))
-      session.record(session.get(view.session_id), {
+      local target = session.get(view.session_id)
+      session.record(target, {
         sql = table.concat(outcome.statements, "\n"),
         ok = true,
         affected = outcome.affected_rows,
         rows = 0,
         elapsed_ms = 0,
       })
+      -- Remember how to put this back; see `dbclient.undolog`.
+      pcall(function()
+        require("dbclient.undolog").record({
+          connection = target and target.name or "?",
+          changes = result.changes,
+          statements = outcome.statements,
+        })
+      end)
       vim.bo[view.bufnr].modified = false
       load(view)
     end, function(err)
@@ -881,6 +890,30 @@ function M.yank()
   require("dbclient.export").yank_menu(M.view(), M.current_cell())
 end
 
+function M.generate()
+  local view = M.view()
+  if not view then
+    return
+  end
+  require("dbclient.codegen").generate({
+    session_id = view.session_id,
+    schema = view.schema,
+    table = view.table,
+  })
+end
+
+function M.import()
+  local view = M.view()
+  if not view then
+    return
+  end
+  require("dbclient.import").prompt({
+    session_id = view.session_id,
+    schema = view.schema,
+    table = view.table,
+  })
+end
+
 function M.open_ddl()
   local view = M.view()
   if not view then
@@ -916,6 +949,8 @@ function M.handlers()
     paste_row = M.paste_row,
     reload = M.reload,
     open_ddl = M.open_ddl,
+    generate = M.generate,
+    import = M.import,
     next_cell = function()
       M.next_cell(1)
     end,

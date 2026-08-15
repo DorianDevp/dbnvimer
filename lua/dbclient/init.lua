@@ -208,6 +208,81 @@ local function define_commands()
     })
   end, { nargs = "+", force = true })
 
+  command("DBClientWatch", function(args)
+    local interval = tonumber(args.args:match("^(%d+)%s")) or 5
+    local sql = args.args:gsub("^%d+%s+", "")
+    if sql == "" then
+      return notify("usage: DBClientWatch [seconds] <sql>", vim.log.levels.ERROR)
+    end
+    require("dbclient.watch").start({ sql = sql, interval = interval })
+  end, { nargs = "+", force = true, desc = "Re-run a statement on a timer" })
+
+  command("DBClientProfile", function(args)
+    local runs = tonumber(args.args:match("^(%d+)%s")) or 10
+    local sql = args.args:gsub("^%d+%s+", "")
+    if sql == "" then
+      return notify("usage: DBClientProfile [runs] <sql>", vim.log.levels.ERROR)
+    end
+    require("dbclient.watch").profile({ sql = sql, runs = runs })
+  end, { nargs = "+", force = true, desc = "Time a statement over several runs" })
+
+  command("DBClientBroadcast", function(args)
+    if args.args == "" then
+      return require("dbclient.broadcast").prompt()
+    end
+    require("dbclient.broadcast").run({ sql = args.args })
+  end, { nargs = "*", force = true, desc = "Run a statement on every open connection" })
+
+  command("DBClientDiagram", function(args)
+    local schema = args.args
+    if schema == "" then
+      local target = session.current()
+      schema = target and target.info and target.info.database or ""
+    end
+    if schema == "" then
+      return notify("usage: DBClientDiagram <schema>", vim.log.levels.ERROR)
+    end
+    require("dbclient.diagram").show({ schema = schema })
+  end, { nargs = "?", force = true, desc = "Entity relationship diagram" })
+
+  command("DBClientImport", function(args)
+    local parts = vim.split(args.args, "%s+")
+    local qualified = vim.split(parts[1] or "", ".", { plain = true })
+    if #qualified ~= 2 then
+      return notify("usage: DBClientImport schema.table [file.csv]", vim.log.levels.ERROR)
+    end
+    local import = require("dbclient.import")
+    if parts[2] then
+      import.start({ schema = qualified[1], table = qualified[2], path = parts[2] })
+    else
+      import.prompt({ schema = qualified[1], table = qualified[2] })
+    end
+  end, { nargs = "+", complete = "file", force = true, desc = "Import a CSV" })
+
+  command("DBClientNotebook", function()
+    require("dbclient.notebook").enable()
+  end, { force = true, desc = "Enable notebook mode in this markdown buffer" })
+
+  command("DBClientSnapshot", function()
+    require("dbclient.snapshot").save_current()
+  end, { force = true, desc = "Save the current result set" })
+
+  command("DBClientCompare", function()
+    require("dbclient.snapshot").diff_with_saved()
+  end, { force = true, desc = "Compare the result set with a snapshot" })
+
+  command("DBClientCompareConnections", function()
+    require("dbclient.snapshot").diff_connections()
+  end, { force = true, desc = "Run a statement on two connections and diff" })
+
+  command("DBClientUndoLog", function()
+    require("dbclient.undolog").open()
+  end, { force = true, desc = "Writes DBClient made, and how to undo them" })
+
+  command("DBClientPipe", function(args)
+    require("dbclient.snapshot").pipe(args.args)
+  end, { nargs = "+", force = true, desc = "Pipe the result set through a shell command" })
+
   command("DBClientHelp", function()
     require("dbclient.ui.help").show_all()
   end, { force = true })
@@ -347,6 +422,69 @@ local function global_handlers()
     disconnect = function()
       session.disconnect()
       sidebar().render()
+    end,
+    watch = function()
+      vim.ui.input({ prompt = "watch sql " }, function(sql)
+        if sql and sql:match("%S") then
+          require("dbclient.watch").start({ sql = sql })
+        end
+      end)
+    end,
+    profile = function()
+      vim.ui.input({ prompt = "profile sql " }, function(sql)
+        if sql and sql:match("%S") then
+          require("dbclient.watch").profile({ sql = sql })
+        end
+      end)
+    end,
+    broadcast = function()
+      require("dbclient.broadcast").prompt()
+    end,
+    notebook = function()
+      require("dbclient.notebook").enable()
+    end,
+    undo_log = function()
+      require("dbclient.undolog").open()
+    end,
+    diagram = function()
+      local target = session.current()
+      if not target then
+        return notify("no active connection", vim.log.levels.WARN)
+      end
+      client.async(function()
+        local schemas = session.schemas(target.id)
+        local names = vim.tbl_map(function(entry)
+          return entry.name
+        end, schemas)
+        vim.ui.select(names, { prompt = "diagram for schema" }, function(schema)
+          if schema then
+            require("dbclient.diagram").show({ session_id = target.id, schema = schema })
+          end
+        end)
+      end, function(err)
+        notify(err, vim.log.levels.ERROR)
+      end)
+    end,
+    import = function()
+      pickers.objects_for(function(choice)
+        require("dbclient.import").prompt({
+          session_id = choice.session_id,
+          schema = choice.schema,
+          table = choice.table,
+        })
+      end)
+    end,
+    compare = function()
+      vim.ui.select({
+        "compare with a saved snapshot",
+        "run on two connections and compare",
+      }, { prompt = "compare" }, function(choice)
+        if choice == "compare with a saved snapshot" then
+          require("dbclient.snapshot").diff_with_saved()
+        elseif choice then
+          require("dbclient.snapshot").diff_connections()
+        end
+      end)
     end,
   }
 end

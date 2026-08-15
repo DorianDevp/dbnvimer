@@ -441,6 +441,42 @@ function M.table_sizes()
   end)
 end
 
+function M.diagram()
+  local node = node_at_cursor()
+  if not node or not node.schema then
+    return notify("move onto a schema or table first", vim.log.levels.WARN)
+  end
+  require("dbclient.diagram").show({
+    session_id = node.session_id,
+    schema = node.schema,
+    tables = node.table and { node.table } or nil,
+  })
+end
+
+function M.generate()
+  local node = node_at_cursor()
+  if not node or not node.table then
+    return notify("move onto a table first", vim.log.levels.WARN)
+  end
+  require("dbclient.codegen").generate({
+    session_id = node.session_id,
+    schema = node.schema,
+    table = node.table,
+  })
+end
+
+function M.import()
+  local node = node_at_cursor()
+  if not node or not node.table then
+    return notify("move onto a table first", vim.log.levels.WARN)
+  end
+  require("dbclient.import").prompt({
+    session_id = node.session_id,
+    schema = node.schema,
+    table = node.table,
+  })
+end
+
 function M.open_query()
   local node = node_at_cursor()
   local target = node and node.session_id or nil
@@ -605,6 +641,9 @@ function M.open()
     open_query = M.open_query,
     show_indexes = M.show_indexes,
     table_sizes = M.table_sizes,
+    diagram = M.diagram,
+    generate = M.generate,
+    import = M.import,
     yank_name = M.yank_name,
     add_connection = M.add_connection,
     edit_connection = M.edit_connection,

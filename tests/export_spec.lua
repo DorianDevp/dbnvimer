@@ -211,3 +211,187 @@ t.describe("value inspector", {
     t.matches(lines[1], "|Hi%.%.|")
   end,
 })
+
+t.describe("csv import parsing", {
+  ["splits quoted fields"] = function()
+    local import = require("dbclient.import")
+    t.eq(import.split_line('a,b,c', ","), { "a", "b", "c" })
+    t.eq(import.split_line('a,"b,c",d', ","), { "a", "b,c", "d" })
+    t.eq(import.split_line('"say ""hi""",x', ","), { 'say "hi"', "x" })
+    t.eq(import.split_line("a\tb", "\t"), { "a", "b" })
+  end,
+
+  ["keeps empty fields"] = function()
+    local import = require("dbclient.import")
+    t.eq(require("dbclient.import").split_line("a,,c", ","), { "a", "", "c" })
+  end,
+
+  ["reads a file and guesses the separator"] = function()
+    local import = require("dbclient.import")
+    local path = vim.fn.tempname() .. ".csv"
+    vim.fn.writefile({ "id;name;note", '1;Anna;"has ; inside"', "2;Bartek;" }, path)
+    local data = import.read(path)
+    t.eq(data.separator, ";")
+    t.eq(data.header, { "id", "name", "note" })
+    t.eq(#data.rows, 2)
+    t.eq(data.rows[1][3], "has ; inside")
+    t.eq(data.rows[2][3], "")
+  end,
+
+  ["joins a quoted field that spans lines"] = function()
+    local import = require("dbclient.import")
+    local path = vim.fn.tempname() .. ".csv"
+    vim.fn.writefile({ "id,note", '1,"first', 'second"' }, path)
+    local data = import.read(path)
+    t.eq(#data.rows, 1)
+    t.eq(data.rows[1][2], "first\nsecond")
+  end,
+})
+
+t.describe("watch diffing", {
+  ["reports changed cells between runs"] = function()
+    local watch = require("dbclient.watch")
+    local before = { { "1", "a" }, { "2", "b" } }
+    local after = { { "1", "a" }, { "2", "changed" }, { "3", "new" } }
+    local changed, added = watch.diff_rows(before, after)
+
+    t.falsy(changed[1], "an untouched row must not be highlighted")
+    t.ok(changed[2] and changed[2][2], "the changed cell must be marked")
+    t.ok(added[3], "a new row must be marked as added")
+  end,
+
+  ["reports nothing on the first run"] = function()
+    local watch = require("dbclient.watch")
+    local changed, added = watch.diff_rows(nil, { { "1", "a" } })
+    t.eq(changed, {})
+    t.eq(added, {})
+  end,
+})
+
+t.describe("broadcast", {
+  ["groups identical results"] = function()
+    local broadcast = require("dbclient.broadcast")
+    local a = { rows = { { "1", "x" }, { "2", "y" } } }
+    local b = { rows = { { "2", "y" }, { "1", "x" } } }
+    local c = { rows = { { "1", "z" } } }
+
+    t.eq(broadcast.fingerprint(a), broadcast.fingerprint(b), "row order must not matter")
+    t.ok(broadcast.fingerprint(a) ~= broadcast.fingerprint(c))
+  end,
+})
+
+t.describe("er diagram", {
+  ["renders mermaid with keys and relationships"] = function()
+    local diagram = require("dbclient.diagram")
+    local lines = diagram.render({
+      schema = "shop",
+      tables = { { name = "customers" }, { name = "orders" } },
+      columns = {
+        customers = { { name = "id", type = "int", key = "PRI" } },
+        orders = {
+          { name = "id", type = "int", key = "PRI" },
+          { name = "customer_id", type = "int", key = "" },
+        },
+      },
+      keys = {
+        { table = "orders", column = "customer_id", ref_table = "customers", ref_column = "id" },
+      },
+      foreign_columns = { ["orders.customer_id"] = true },
+    })
+
+    local text = table.concat(lines, "\n")
+    t.matches(text, "erDiagram")
+    t.matches(text, "int id PK")
+    t.matches(text, "int customer_id FK")
+    t.matches(text, "orders }o%-%-|| customers : customer_id")
+  end,
+})
+
+t.describe("undo log", {
+  ["inverts an update using the recorded old values"] = function()
+    local undolog = require("dbclient.undolog")
+    local inverse = undolog.invert({
+      op = "update",
+      schema = "shop",
+      table = "customers",
+      set = { city = "CZ" },
+      pk = { id = "1" },
+      expect = { city = "PL" },
+    })
+    t.eq(inverse.op, "update")
+    t.eq(inverse.set, { city = "PL" })
+    t.eq(inverse.pk, { id = "1" })
+  end,
+
+  ["targets the new key when the key itself changed"] = function()
+    local undolog = require("dbclient.undolog")
+    local inverse = undolog.invert({
+      op = "update",
+      schema = "shop",
+      table = "customers",
+      set = { id = "42" },
+      pk = { id = "1" },
+      expect = { id = "1" },
+    })
+    t.eq(inverse.pk, { id = "42" }, "the row now lives under the new key")
+    t.eq(inverse.set, { id = "1" })
+  end,
+
+  ["inverts an insert into a delete"] = function()
+    local undolog = require("dbclient.undolog")
+    local inverse = undolog.invert({
+      op = "insert",
+      schema = "shop",
+      table = "customers",
+      values = { id = "9", name = "x" },
+    })
+    t.eq(inverse.op, "delete")
+    t.eq(inverse.pk.id, "9")
+  end,
+
+  ["refuses to invent a deleted row"] = function()
+    local undolog = require("dbclient.undolog")
+    t.eq(
+      undolog.invert({ op = "delete", schema = "s", table = "t", pk = { id = "1" } }),
+      nil,
+      "the other columns were never read, so the row cannot be restored"
+    )
+  end,
+})
+
+t.describe("notebook", {
+  ["finds the sql block under the cursor"] = function()
+    local notebook = require("dbclient.notebook")
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+      "# notes",
+      "",
+      "```sql",
+      "select 1;",
+      "```",
+      "",
+      "```lua",
+      "print(1)",
+      "```",
+    })
+
+    local block = notebook.block_at(bufnr, 4)
+    t.ok(block, "the cursor is inside the sql block")
+    t.eq(block.sql, "select 1;")
+
+    t.eq(notebook.block_at(bufnr, 8), nil, "a lua block is not executable here")
+    t.eq(notebook.block_at(bufnr, 1), nil, "prose is not a block")
+  end,
+})
+
+t.describe("snapshots", {
+  ["render rows in a diff-friendly form"] = function()
+    local snapshot = require("dbclient.snapshot")
+    local lines = snapshot.render({
+      columns = { { name = "id" }, { name = "name" } },
+      rows = { { "2", "b" }, { "1", "a" } },
+    })
+    t.eq(lines[1], "id=1  name=a", "rows are sorted so order does not create noise")
+    t.eq(lines[2], "id=2  name=b")
+  end,
+})

@@ -227,6 +227,19 @@ function M.attach(bufnr)
     transpose = M.transpose,
     yank = M.yank,
     export = M.export_result,
+    snapshot = function()
+      require("dbclient.snapshot").save_current()
+    end,
+    compare = function()
+      require("dbclient.snapshot").diff_with_saved()
+    end,
+    pipe = function()
+      vim.ui.input({ prompt = "pipe rows through " }, function(command)
+        if command and command:match("%S") then
+          require("dbclient.snapshot").pipe(command)
+        end
+      end)
+    end,
     next_cell = function()
       move(0, 1)
     end,

@@ -250,6 +250,14 @@ Available everywhere; prefixed with `g:dbclient_leader` (default
     <leader>dm       commit the transaction
     <leader>dr       roll back the transaction
     <leader>dx       close the active connection
+    <leader>dw       watch a statement on a timer
+    <leader>dp       time a statement over several runs
+    <leader>dB       run a statement on every connection
+    <leader>dn       turn this markdown buffer into a notebook
+    <leader>du       writes DBClient made, and how to undo them
+    <leader>de       entity relationship diagram for a schema
+    <leader>di       import a CSV into a table
+    <leader>dv       compare result sets or connections
 
 SIDEBAR
 
@@ -265,6 +273,9 @@ Object tree: connections, schemas, tables, columns and routines.
     gq               open a query buffer
     gi               list indexes
     gz               table and index sizes
+    ge               entity relationship diagram
+    gG               generate code from this table
+    gI               import a CSV into this table
     gy               yank the qualified object name
     a                add a connection
     c                edit the connection
@@ -306,6 +317,8 @@ key.
     gp               duplicate this row as a new INSERT
     gr               reload from the database
     gD               open the DDL for this table
+    gG               generate code from this table
+    gI               import a CSV into this table
     ]c               next cell
     [c               previous cell
     ]r               next row
@@ -338,6 +351,9 @@ Read-only grid. `:w name.csv` exports; the format follows the extension.
     gt               transposed view of this row
     gy               yank cell, row or selection as...
     ge               export the result set
+    gS               save this result set as a snapshot
+    gV               compare with a saved snapshot
+    g!               pipe the rows through a shell command
     ]c               next cell
     [c               previous cell
     ]r               next row

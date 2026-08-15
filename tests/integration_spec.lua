@@ -470,6 +470,153 @@ t.describe("integration: mappings", {
     end
   end },})
 
+t.describe("integration: notebooks, diagrams and import", {
+  { "runs a SQL block in a markdown buffer and writes the result back", function()
+    local notebook = require("dbclient.notebook")
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+      "# analysis",
+      "",
+      "```sql",
+      "select count(*) as total from customers;",
+      "```",
+    })
+    vim.api.nvim_win_set_buf(0, bufnr)
+    vim.api.nvim_win_set_cursor(0, { 4, 0 })
+
+    notebook.run_block()
+    wait_for(function()
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      return vim.tbl_contains(lines, notebook.RESULT_OPEN)
+    end, 8000, "notebook result")
+
+    local text = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
+    t.matches(text, "| total |", "the result is written back as a markdown table")
+    t.matches(text, "row%(s%) in")
+
+    -- Running again replaces the result rather than stacking another one.
+    vim.api.nvim_win_set_cursor(0, { 4, 0 })
+    notebook.run_block()
+    vim.wait(1500, function()
+      return false
+    end, 50)
+    local _, count = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
+      :gsub(vim.pesc(notebook.RESULT_OPEN), "")
+    t.eq(count, 1, "a re-run must replace the previous result")
+  end },
+
+  { "builds an ER diagram from the real foreign keys", function()
+    local done = false
+    require("dbclient.diagram").show({ session_id = connected.id, schema = "main" })
+    wait_for(function()
+      done = vim.fn.bufnr("dbclient://testdb/main.diagram.md") > 0
+      return done
+    end, 8000, "diagram")
+
+    local bufnr = vim.fn.bufnr("dbclient://testdb/main.diagram.md")
+    local text = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
+    t.matches(text, "erDiagram")
+    t.matches(text, "orders }o%-%-|| customers")
+    t.matches(text, "PK")
+  end },
+
+  { "imports a CSV through the change-set path", function()
+    local import = require("dbclient.import")
+    local path = vim.fn.tempname() .. ".csv"
+    vim.fn.writefile({ "id,name,city", "500,Imported,PL", "501,Second,DE" }, path)
+
+    local data = import.read(path)
+    t.eq(data.header, { "id", "name", "city" })
+    t.eq(#data.rows, 2)
+
+    -- Drive the insert directly; the interactive path only adds the prompt.
+    local changes = {}
+    for _, row in ipairs(data.rows) do
+      table.insert(changes, {
+        op = "insert",
+        schema = "main",
+        table = "customers",
+        values = { id = row[1], name = row[2], city = row[3] },
+      })
+    end
+
+    run(function()
+      local before = session.count(connected.id, { schema = "main", table = "customers" })
+      session.apply_changes(connected.id, changes)
+      local after = session.count(connected.id, { schema = "main", table = "customers" })
+      t.eq(after, before + 2)
+    end)
+  end },
+
+  { "watch highlights only what changed between runs", function()
+    local watch = require("dbclient.watch")
+    run(function()
+      local first = session.query(connected.id, "select id, city from customers order by id")
+      session.query(connected.id, "update customers set city = 'ZZ' where id = 500")
+      local second = session.query(connected.id, "select id, city from customers order by id")
+
+      local changed = watch.diff_rows(first.rows, second.rows)
+      local marked = 0
+      for _ in pairs(changed) do
+        marked = marked + 1
+      end
+      t.eq(marked, 1, "exactly one row differs")
+    end)
+  end },
+
+  { "snapshots round-trip through a file", function()
+    run(function()
+      local result = session.preview(connected.id, { schema = "main", table = "customers" })
+      local snapshot = require("dbclient.snapshot")
+      local path = snapshot.save(result, "integration-test")
+      t.ok(vim.fn.filereadable(path) == 1)
+
+      local written = vim.fn.readfile(path)
+      local body = vim.tbl_filter(function(line)
+        return not line:match("^%-%-") and line ~= ""
+      end, written)
+      t.eq(#body, #result.rows)
+      t.matches(body[1], "id=")
+    end)
+  end },
+
+  { "the undo log inverts what the data buffer wrote", function()
+    local undolog = require("dbclient.undolog")
+    undolog.entries = {}
+
+    local change = {
+      op = "update",
+      schema = "main",
+      table = "customers",
+      set = { city = "XX" },
+      pk = { id = "500" },
+      expect = { city = "ZZ" },
+    }
+
+    run(function()
+      session.apply_changes(connected.id, { change })
+    end)
+    undolog.record({
+      connection = connected.name,
+      changes = { change },
+      statements = { "update ..." },
+    })
+
+    local entry = undolog.entries[#undolog.entries]
+    t.eq(entry.undoable, 1)
+
+    run(function()
+      local inverse = undolog.invert(change)
+      session.apply_changes(connected.id, { inverse })
+      local result = session.preview(connected.id, {
+        schema = "main",
+        table = "customers",
+        filter = "id = 500",
+      })
+      t.eq(result.rows[1][3], "ZZ", "the compensating update restored the value")
+    end)
+  end },})
+
 t.describe("integration: shutdown", {
   { "closing a session leaves the daemon healthy", function()
     session.disconnect(connected.id)

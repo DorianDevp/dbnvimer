@@ -106,9 +106,35 @@ binary will be rejected with a clear message rather than misbehaving.
 - **Object search** across every cached table and column.
 - `:checkhealth dbclient`, including a core protocol version check.
 
+### Working with results
+
+- **`:DBClientWatch`** re-runs a statement on a timer and highlights the cells
+  that changed since the previous run, which is the part a shell loop cannot do.
+- **`:DBClientProfile`** times a statement over several runs and shows the
+  distribution, so an outlier is visible instead of averaged away.
+- **`:DBClientBroadcast`** runs one statement on every open connection and
+  groups the connections by identical answers — the useful output for a sharded
+  or multi-tenant setup is "do these all agree", not the rows themselves.
+- **Snapshots**: save a result set to a file and diff it against a fresh run, or
+  run the same statement on two connections and diff those, in Neovim's own
+  diff mode.
+- **`:DBClientPipe`** feeds the rows through a shell command as JSON lines.
+- **`:DBClientImport`** imports a CSV with the column mapping edited as text and
+  confirmed with `:w`, reusing the data buffer's change-set path so the type
+  coercion, NULL handling and transaction are shared rather than reimplemented.
+- **`:DBClientDiagram`** writes a Mermaid entity relationship diagram from the
+  foreign key metadata: a text file that renders in GitHub and diffs like code.
+- **Notebook mode**: ```sql blocks in a Markdown buffer run with `<CR>` and
+  write their result back underneath. Re-running replaces the previous answer,
+  so the document stays a document.
+- **`:DBClientUndoLog`** records every write DBClient made together with the
+  statement that would undo it, and opens it as SQL to read and run. It only
+  covers DBClient's own writes and says so: a deleted row's other columns were
+  never read, so it is not offered as recoverable.
+
 ### Testing
 
-- 43 Rust unit tests, 116 Lua tests (including an end-to-end suite driving real
+- 43 Rust unit tests, 130 Lua tests (including an end-to-end suite driving real
   buffers against a real database), and 32 adapter tests each against a live
   PostgreSQL and MariaDB server.
 - `scripts/protocol_smoke.py` exercises the wire protocol over stdio.

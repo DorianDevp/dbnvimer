@@ -90,6 +90,46 @@ function M.objects()
   end)
 end
 
+--- Pick a table and hand the choice to a callback.
+---@param callback fun(choice: { session_id: string, schema: string, table: string })
+function M.objects_for(callback)
+  local target = session.current()
+  if not target then
+    return notify("no active connection", vim.log.levels.WARN)
+  end
+
+  client.async(function()
+    completion.warm(target.id)
+    local index = completion.index[target.id]
+    local entries = {}
+    for _, entry in ipairs(index and index.tables or {}) do
+      table.insert(entries, {
+        session_id = target.id,
+        schema = entry.schema,
+        table = entry.name,
+        label = ("%s.%s"):format(entry.schema, entry.name),
+      })
+    end
+
+    if #entries == 0 then
+      return notify("no tables indexed yet", vim.log.levels.WARN)
+    end
+
+    vim.ui.select(entries, {
+      prompt = "table",
+      format_item = function(entry)
+        return entry.label
+      end,
+    }, function(choice)
+      if choice then
+        callback(choice)
+      end
+    end)
+  end, function(err)
+    notify(err, vim.log.levels.ERROR)
+  end)
+end
+
 --- Re-run something from the history.
 function M.history()
   local target = session.current()

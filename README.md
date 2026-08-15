@@ -43,9 +43,10 @@ always one line.
 
 Early software under active development, built with AI-assisted rapid
 development. The core protocol, the editable data buffer and the safety rails
-are covered by tests (43 Rust, 116 Lua, including an end-to-end suite against a
-real database); the PostgreSQL and MariaDB adapters need more testing against
-real production schemas before a 1.0.
+are covered by tests: 43 Rust, 130 Lua including an end-to-end suite driving
+real buffers, and 32 adapter tests each against a live PostgreSQL and MariaDB
+server. The adapters still want exercising against real production schemas
+before a 1.0.
 
 ## Installation
 
@@ -196,6 +197,16 @@ matters, so several things guard against it:
 | `:DBClientSchemaDiff` | diff two schemas in Neovim's diff mode |
 | `:DBClientDDL schema.object` | open an object's DDL |
 | `:DBClientGenerate schema.table [template]` | generate a struct, interface, schema |
+| `:DBClientWatch [s] <sql>` | re-run a statement on a timer, highlighting what changed |
+| `:DBClientProfile [n] <sql>` | time a statement over several runs |
+| `:DBClientBroadcast [sql]` | run one statement on every open connection and compare |
+| `:DBClientDiagram [schema]` | Mermaid entity relationship diagram |
+| `:DBClientImport schema.table [file]` | import a CSV |
+| `:DBClientNotebook` | executable ```sql blocks in this markdown buffer |
+| `:DBClientSnapshot` / `:DBClientCompare` | save a result set, diff against a saved one |
+| `:DBClientCompareConnections` | run one statement on two connections and diff |
+| `:DBClientUndoLog` | writes DBClient made, and the SQL that undoes them |
+| `:DBClientPipe <cmd>` | pipe the rows through a shell command |
 | `:DBClientHelp` | every mapping in one buffer |
 | `:DBClientRestart` | restart the core |
 
@@ -227,6 +238,14 @@ Available everywhere; prefixed with `g:dbclient_leader` (default `<leader>d`).
 | `<leader>dm` | commit the transaction |
 | `<leader>dr` | roll back the transaction |
 | `<leader>dx` | close the active connection |
+| `<leader>dw` | watch a statement on a timer |
+| `<leader>dp` | time a statement over several runs |
+| `<leader>dB` | run a statement on every connection |
+| `<leader>dn` | turn this markdown buffer into a notebook |
+| `<leader>du` | writes DBClient made, and how to undo them |
+| `<leader>de` | entity relationship diagram for a schema |
+| `<leader>di` | import a CSV into a table |
+| `<leader>dv` | compare result sets or connections |
 
 ### Sidebar
 
@@ -244,6 +263,9 @@ Object tree: connections, schemas, tables, columns and routines.
 | `gq` | open a query buffer |
 | `gi` | list indexes |
 | `gz` | table and index sizes |
+| `ge` | entity relationship diagram |
+| `gG` | generate code from this table |
+| `gI` | import a CSV into this table |
 | `gy` | yank the qualified object name |
 | `a` | add a connection |
 | `c` | edit the connection |
@@ -281,6 +303,8 @@ Only navigation and inspection are mapped, so nothing shadows an editing key.
 | `gp` | duplicate this row as a new INSERT |
 | `gr` | reload from the database |
 | `gD` | open the DDL for this table |
+| `gG` | generate code from this table |
+| `gI` | import a CSV into this table |
 | `]c` | next cell |
 | `[c` | previous cell |
 | `]r` | next row |
@@ -315,6 +339,9 @@ Read-only grid. `:w name.csv` exports; the format follows the extension.
 | `gt` | transposed view of this row |
 | `gy` | yank cell, row or selection as... |
 | `ge` | export the result set |
+| `gS` | save this result set as a snapshot |
+| `gV` | compare with a saved snapshot |
+| `g!` | pipe the rows through a shell command |
 | `]c` | next cell |
 | `[c` | previous cell |
 | `]r` | next row |
@@ -389,6 +416,35 @@ Available in data and result buffers, in operator-pending and visual mode.
 | `aC` | a column, including its separator |
 
 <!-- keys:stop -->
+
+## Notebooks
+
+`:DBClientNotebook` turns a Markdown buffer into one where ```sql blocks run
+with `<CR>` and write their answer back underneath as a table:
+
+````markdown
+<!-- @conn: staging -->
+
+## Why did revenue drop in March?
+
+```sql
+select date_trunc('month', placed_at) as month, sum(total)
+from orders group by 1 order by 1;
+```
+<!-- dbclient:result -->
+`3 row(s) in 12 ms`
+
+| month | sum |
+| --- | ---: |
+| 2026-01-01 | 1200.50 |
+| 2026-02-01 |  210.00 |
+| 2026-03-01 | 1255.25 |
+<!-- dbclient:end -->
+````
+
+Re-running a block replaces its result rather than stacking another one, so the
+document stays a document. It is a file, so it commits alongside the incident
+it explains.
 
 ## The data buffer
 
