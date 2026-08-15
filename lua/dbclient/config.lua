@@ -76,8 +76,6 @@ local defaults = {
     virtual_fk = true,
     --- Pin the header row as a winbar while scrolling.
     sticky_header = true,
-    --- Terminal graphics for image blobs when the terminal supports it.
-    image_preview = true,
   },
 
   --- Set to false to register no default mappings at all.

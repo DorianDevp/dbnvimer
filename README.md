@@ -43,7 +43,7 @@ always one line.
 
 Early software under active development, built with AI-assisted rapid
 development. The core protocol, the editable data buffer and the safety rails
-are covered by tests: 43 Rust, 130 Lua including an end-to-end suite driving
+are covered by tests: 43 Rust, 143 Lua including an end-to-end suite driving
 real buffers, and 32 adapter tests each against a live PostgreSQL and MariaDB
 server. The adapters still want exercising against real production schemas
 before a 1.0.
@@ -147,6 +147,7 @@ require("dbclient").setup({
     row_stripes = true,
     winbar = true,
     virtual_fk = true,         -- show `→ users.id` beside foreign keys
+    sticky_header = true,      -- keep column names in the winbar when scrolled
   },
   keys = true,                 -- false registers no mappings at all
   detect = { enabled = true },
@@ -207,6 +208,8 @@ matters, so several things guard against it:
 | `:DBClientCompareConnections` | run one statement on two connections and diff |
 | `:DBClientUndoLog` | writes DBClient made, and the SQL that undoes them |
 | `:DBClientPipe <cmd>` | pipe the rows through a shell command |
+| `:DBClientIndexes [schema]` | index usage and unused index candidates |
+| `:DBClientWorkspaceSave` / `Restore` / `Show` / `Clear` | the open tables and queries for this project |
 | `:DBClientHelp` | every mapping in one buffer |
 | `:DBClientRestart` | restart the core |
 
@@ -489,6 +492,15 @@ per-environment queries can live in the repository.
 `K` describes the table or column under the cursor from the cached schema, `gd`
 opens its DDL, and completion (`omnifunc`, plus an `nvim-cmp` source when cmp is
 installed) offers tables, columns and routines.
+
+## Workspaces
+
+`:DBClientWorkspaceSave` records which connections are open, which tables you
+had open with their filters and sorts, and the contents of your query buffers,
+keyed by working directory. It is saved automatically on exit;
+`:DBClientWorkspaceRestore` brings it back. `:mksession` cannot help here —
+restoring a data buffer means reconnecting and re-running its query, not
+restoring bytes.
 
 ## Requirements
 

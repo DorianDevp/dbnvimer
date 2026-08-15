@@ -198,7 +198,7 @@ function M.open(opts)
   local bufnr = vim.api.nvim_create_buf(false, true)
   vim.bo[bufnr].bufhidden = "wipe"
 
-  local function present(lines, filetype, note)
+  local function present(lines, filetype, note, extra)
     vim.bo[bufnr].modifiable = true
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
     if filetype then
@@ -233,6 +233,10 @@ function M.open(opts)
       })
     end
 
+    if extra then
+      extra(bufnr)
+    end
+
     window.close_keys(bufnr, winid)
   end
 
@@ -252,6 +256,7 @@ function M.open(opts)
       local bytes = vim.base64.decode(blob.base64)
       local lines = {
         ("%d bytes, %s"):format(blob.size, blob.mime),
+        "gw writes the bytes to a file",
         "",
       }
       if blob.mime == "text/plain" then
@@ -259,7 +264,39 @@ function M.open(opts)
       else
         vim.list_extend(lines, M.hex_dump(bytes))
       end
-      present(lines, nil, blob.mime)
+      present(lines, nil, blob.mime, function(target_buf)
+        -- A terminal cannot be relied on to render an image, but writing the
+        -- bytes out lets the user open them with whatever does.
+        vim.keymap.set("n", "gw", function()
+          local extension = ({
+            ["image/png"] = "png",
+            ["image/jpeg"] = "jpg",
+            ["image/gif"] = "gif",
+            ["image/webp"] = "webp",
+            ["image/bmp"] = "bmp",
+            ["application/pdf"] = "pdf",
+            ["application/zip"] = "zip",
+            ["application/gzip"] = "gz",
+          })[blob.mime] or "bin"
+
+          vim.ui.input({
+            prompt = "write blob to ",
+            default = ("%s/blob.%s"):format(vim.fn.getcwd(), extension),
+            completion = "file",
+          }, function(path)
+            if not path or path == "" then
+              return
+            end
+            local handle = io.open(vim.fn.expand(path), "wb")
+            if not handle then
+              return vim.notify("DBClient: could not open " .. path, vim.log.levels.ERROR)
+            end
+            handle:write(bytes)
+            handle:close()
+            vim.notify(("DBClient: wrote %d bytes to %s"):format(#bytes, path))
+          end)
+        end, { buffer = target_buf, silent = true, desc = "DBClient: write the blob to a file" })
+      end)
     end, function(err)
       present({ "could not decode blob: " .. err, "", text }, nil, "binary")
     end)

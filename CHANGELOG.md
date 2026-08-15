@@ -132,9 +132,23 @@ binary will be rejected with a clear message rather than misbehaving.
   covers DBClient's own writes and says so: a deleted row's other columns were
   never read, so it is not offered as recoverable.
 
+### Workspaces and diagnostics
+
+- **`:DBClientWorkspaceSave` / `Restore`** remember which connections are open,
+  which tables you had open with their filters and sorts, and your query buffer
+  contents, keyed by working directory and saved automatically on exit.
+  `:mksession` cannot do this: restoring a data buffer means reconnecting and
+  re-running its query, not restoring bytes.
+- **`:DBClientIndexes`** surfaces index usage counters and unused index
+  candidates, which the core already collected but nothing exposed.
+- **Sticky header**: once the header row scrolls out of sight, the column names
+  appear in the winbar, matched to the horizontal scroll.
+- The value inspector can write a blob out to a file (`gw`), which is more
+  useful than pretending a terminal will render it.
+
 ### Testing
 
-- 43 Rust unit tests, 130 Lua tests (including an end-to-end suite driving real
+- 43 Rust unit tests, 143 Lua tests (including an end-to-end suite driving real
   buffers against a real database), and 32 adapter tests each against a live
   PostgreSQL and MariaDB server.
 - `scripts/protocol_smoke.py` exercises the wire protocol over stdio.

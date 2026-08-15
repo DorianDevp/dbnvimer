@@ -52,6 +52,36 @@ local function segment(text, group)
   return ("%%#%s#%s%%*"):format(group, text)
 end
 
+--- The grid header for a buffer, shown once the header row has scrolled out of
+--- sight. A wide table is unreadable without it.
+---@param bufnr integer
+---@return string|nil
+local function sticky_header(bufnr)
+  if not config.get().ui.sticky_header then
+    return nil
+  end
+  local header = vim.b[bufnr] and vim.b[bufnr].dbclient_header
+  if not header or header == "" then
+    return nil
+  end
+
+  local winid = vim.api.nvim_get_current_win()
+  if vim.api.nvim_win_get_buf(winid) ~= bufnr then
+    return nil
+  end
+
+  -- Only once the real header line is above the viewport.
+  local view = vim.fn.winsaveview()
+  if (view.topline or 1) <= 2 then
+    return nil
+  end
+
+  -- Match the horizontal scroll so the names stay over their columns.
+  local offset = view.leftcol or 0
+  local visible = header:sub(offset + 1)
+  return visible
+end
+
 --- Build the winbar text for a buffer.
 ---@param bufnr integer
 ---@return string
@@ -59,6 +89,12 @@ function M.render(bufnr)
   local target = M.session_for(bufnr)
   if not target then
     return segment(" no connection ", "DBClientDetected")
+  end
+
+  local sticky = sticky_header(bufnr)
+  if sticky then
+    return segment((" %s "):format(target.name), highlights.connection_group(target.color))
+      .. segment(sticky, "DBClientHeader")
   end
 
   local parts = {}

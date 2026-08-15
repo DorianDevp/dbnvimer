@@ -21,7 +21,8 @@ local function fingerprint(result)
   for _, row in ipairs(result.rows or {}) do
     local cells = {}
     for _, value in ipairs(row) do
-      table.insert(cells, value == nil or value == vim.NIL and "\0" or tostring(value))
+      local is_null = value == nil or value == vim.NIL
+      table.insert(cells, is_null and "\0" or tostring(value))
     end
     table.insert(parts, table.concat(cells, "\1"))
   end

@@ -36,13 +36,8 @@ function M.render(result, opts)
     local cells = {}
     for index, column in ipairs(columns) do
       local value = row[index]
-      table.insert(
-        cells,
-        ("%s=%s"):format(
-          column.name,
-          value == nil or value == vim.NIL and "NULL" or tostring(value)
-        )
-      )
+      local is_null = value == nil or value == vim.NIL
+      table.insert(cells, ("%s=%s"):format(column.name, is_null and "NULL" or tostring(value)))
     end
     table.insert(lines, table.concat(cells, "  "))
   end

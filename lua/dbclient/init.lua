@@ -283,6 +283,50 @@ local function define_commands()
     require("dbclient.snapshot").pipe(args.args)
   end, { nargs = "+", force = true, desc = "Pipe the result set through a shell command" })
 
+  command("DBClientIndexes", function(args)
+    local target = session.current()
+    if not target then
+      return notify("no active connection", vim.log.levels.WARN)
+    end
+    local schema = args.args ~= "" and args.args
+      or (target.info and target.info.database)
+    if not schema or schema == "" then
+      return notify("usage: DBClientIndexes <schema>", vim.log.levels.ERROR)
+    end
+    client.async(function()
+      local result = session.unused_indexes(target.id, schema)
+      require("dbclient.ui.results").show(result, {
+        session_id = target.id,
+        session_name = "index usage",
+      })
+    end, function(err)
+      notify(err, vim.log.levels.ERROR)
+    end)
+  end, { nargs = "?", force = true, desc = "Index usage and unused index candidates" })
+
+  command("DBClientWorkspaceSave", function()
+    local path = require("dbclient.workspace").save()
+    notify(path and ("workspace saved to " .. path) or "nothing to save")
+  end, { force = true, desc = "Save the workspace for this directory" })
+
+  command("DBClientWorkspaceRestore", function()
+    require("dbclient.workspace").restore()
+  end, { force = true, desc = "Restore the workspace for this directory" })
+
+  command("DBClientWorkspaceShow", function()
+    local lines = require("dbclient.workspace").describe()
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.bo[bufnr].bufhidden = "wipe"
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+    vim.bo[bufnr].modifiable = false
+    local winid = require("dbclient.ui.window").float(bufnr, { title = "workspace" })
+    require("dbclient.ui.window").close_keys(bufnr, winid)
+  end, { force = true, desc = "Show the saved workspace" })
+
+  command("DBClientWorkspaceClear", function()
+    require("dbclient.workspace").clear()
+  end, { force = true, desc = "Forget the saved workspace" })
+
   command("DBClientHelp", function()
     require("dbclient.ui.help").show_all()
   end, { force = true })
@@ -307,6 +351,11 @@ local function define_autocommands()
   vim.api.nvim_create_autocmd("VimLeavePre", {
     group = group,
     callback = function()
+      -- Capture before tearing down, so there is something to capture.
+      pcall(function()
+        require("dbclient.workspace").save()
+      end)
+      require("dbclient.watch").stop_all()
       session.disconnect_all()
       client.stop()
     end,

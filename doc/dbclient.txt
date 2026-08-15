@@ -63,6 +63,7 @@ Full options: >
       row_stripes = true,
       winbar = true,
       virtual_fk = true,
+      sticky_header = true,
     },
     keys = true,
     detect = { enabled = true },
@@ -220,6 +221,70 @@ COMMANDS                                                *dbclient-commands*
                         Generate a Go struct, TypeScript interface, Rust
                         struct, Python dataclass, Zod schema or SQL
                         scaffolding.
+
+                                                        *:DBClientIndexes*
+:DBClientIndexes [schema]
+                        Index usage counters and unused index candidates.
+
+                                                        *:DBClientWatch*
+:DBClientWatch [seconds] {sql}
+                        Re-run a statement on a timer, highlighting the cells
+                        that changed since the previous run.
+
+                                                        *:DBClientProfile*
+:DBClientProfile [runs] {sql}
+                        Time a statement over several runs and show the
+                        distribution, so one slow run stays visible.
+
+                                                        *:DBClientBroadcast*
+:DBClientBroadcast [sql]
+                        Run one statement on every open connection and group
+                        the connections by identical answers.
+
+                                                        *:DBClientDiagram*
+:DBClientDiagram [schema]
+                        Write a Mermaid entity relationship diagram from the
+                        foreign key metadata.
+
+                                                        *:DBClientImport*
+:DBClientImport {schema.table} [file]
+                        Import a CSV. The column mapping is edited as text and
+                        confirmed with `:w`.
+
+                                                        *:DBClientNotebook*
+:DBClientNotebook       Make ```sql blocks in this Markdown buffer executable
+                        with <CR>. The result is written back underneath, and
+                        a re-run replaces it rather than stacking another.
+
+                                                        *:DBClientSnapshot*
+:DBClientSnapshot       Save the current result set to a file.
+
+                                                        *:DBClientCompare*
+:DBClientCompare        Diff the current result set against a saved snapshot.
+
+                                              *:DBClientCompareConnections*
+:DBClientCompareConnections
+                        Run one statement on two connections and diff the
+                        results in Neovim's diff mode.
+
+                                                        *:DBClientUndoLog*
+:DBClientUndoLog        Writes DBClient made, with the SQL that undoes each.
+                        Only DBClient's own writes are covered, and a deleted
+                        row is reported as unrecoverable rather than guessed.
+
+                                                        *:DBClientPipe*
+:DBClientPipe {command} Pipe the rows through a shell command as JSON lines.
+
+                                              *:DBClientWorkspaceSave*
+:DBClientWorkspaceSave  Save the open connections, tables and query buffers for
+                        this working directory. Done automatically on exit.
+
+                                            *:DBClientWorkspaceRestore*
+:DBClientWorkspaceRestore
+                        Reopen everything the saved workspace describes.
+
+:DBClientWorkspaceShow  Show what would be restored.
+:DBClientWorkspaceClear Forget the saved workspace.
 
                                                         *:DBClientHelp*
 :DBClientHelp           Every mapping in one buffer.

@@ -168,6 +168,39 @@ function M.run_block()
   end)
 end
 
+--- Every ```sql block in the buffer, in order.
+---
+--- Found in one pass: asking `block_at` about each line in turn re-read the
+--- whole buffer per line, which is quadratic on a document of any size.
+---@param bufnr integer
+---@return { first: integer, last: integer, sql: string }[]
+function M.blocks(bufnr)
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  local blocks = {}
+  local open = nil
+  local language = nil
+
+  for index, line in ipairs(lines) do
+    local fence = line:match("^```%s*(%S*)")
+    if fence ~= nil then
+      if open then
+        if language:lower() == "sql" then
+          table.insert(blocks, {
+            first = open,
+            last = index,
+            sql = table.concat(vim.list_slice(lines, open + 1, index - 1), "\n"),
+          })
+        end
+        open, language = nil, nil
+      else
+        open, language = index, fence
+      end
+    end
+  end
+
+  return blocks
+end
+
 --- Run every SQL block in the buffer, top to bottom.
 function M.run_all()
   local bufnr = vim.api.nvim_get_current_buf()
@@ -177,18 +210,14 @@ function M.run_all()
   end
 
   client.async(function()
-    local index = 1
     local ran = 0
+    local processed = 0
+
+    -- Re-scan after each block, because writing a result shifts every line
+    -- below it; `processed` keeps the walk moving forward.
     while true do
-      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-      local block
-      for position = index, #lines do
-        local candidate = M.block_at(bufnr, position)
-        if candidate and candidate.first >= index then
-          block = candidate
-          break
-        end
-      end
+      local blocks = M.blocks(bufnr)
+      local block = blocks[processed + 1]
       if not block then
         break
       end
@@ -200,7 +229,7 @@ function M.run_all()
       vim.api.nvim_buf_set_lines(bufnr, insert_at, insert_at, false, body)
 
       ran = ran + 1
-      index = insert_at + #body + 1
+      processed = processed + 1
     end
     notify(("ran %d block(s)"):format(ran))
   end, function(err)

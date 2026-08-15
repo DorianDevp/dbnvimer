@@ -395,3 +395,113 @@ t.describe("snapshots", {
     t.eq(lines[2], "id=2  name=b")
   end,
 })
+
+t.describe("workspace", {
+  ["captures and describes what is open"] = function()
+    local workspace = require("dbclient.workspace")
+    local session = require("dbclient.session")
+    local data = require("dbclient.ui.data")
+
+    -- Stand in for a live session and one open data buffer.
+    session.sessions.w1 = { id = "w1", name = "wtest", spec = {}, cache = {} }
+    session.order = { "w1" }
+    session.active = "w1"
+
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    data.views[bufnr] = {
+      bufnr = bufnr,
+      session_id = "w1",
+      schema = "main",
+      table = "customers",
+      filter = "city = 'PL'",
+      sort = { { column = "id", dir = "desc" } },
+      limit = 200,
+      offset = 0,
+      hidden = { [3] = true },
+      rows = {},
+      columns = {},
+      primary = {},
+    }
+
+    local state = workspace.capture()
+    t.eq(state.connections, { "wtest" })
+    t.eq(state.active, "wtest")
+    t.eq(#state.data, 1)
+    t.eq(state.data[1].table, "customers")
+    t.eq(state.data[1].filter, "city = 'PL'")
+    t.eq(state.data[1].hidden, { 3 })
+
+    data.views[bufnr] = nil
+    session.sessions.w1 = nil
+    session.order = {}
+    session.active = nil
+  end,
+
+  ["keys the file by working directory"] = function()
+    local workspace = require("dbclient.workspace")
+    local a = workspace.path("/home/x/project-one")
+    local b = workspace.path("/home/x/project-two")
+    t.ok(a ~= b)
+    t.matches(a, "project_one")
+  end,
+
+  ["says so when nothing is saved"] = function()
+    local workspace = require("dbclient.workspace")
+    local lines = workspace.describe()
+    t.matches(table.concat(lines, "\n"), "no saved workspace")
+  end,
+})
+
+t.describe("null handling in derived views", {
+  ["broadcast fingerprints a NULL without crashing"] = function()
+    local broadcast = require("dbclient.broadcast")
+    -- `table.concat` rejects a boolean, so a precedence slip here was a crash
+    -- on any result containing a NULL.
+    local with_null = { rows = { { "1", vim.NIL } } }
+    local with_text = { rows = { { "1", "NULL" } } }
+    local a = broadcast.fingerprint(with_null)
+    t.ok(type(a) == "string")
+    t.ok(a ~= broadcast.fingerprint(with_text), "NULL and the text NULL must differ")
+  end,
+
+  ["snapshots render NULL as NULL"] = function()
+    local snapshot = require("dbclient.snapshot")
+    local lines = snapshot.render({
+      columns = { { name = "id" }, { name = "note" } },
+      rows = { { "1", vim.NIL } },
+    })
+    t.eq(lines[1], "id=1  note=NULL")
+  end,
+})
+
+t.describe("notebook block scanning", {
+  ["finds every sql block in one pass"] = function()
+    local notebook = require("dbclient.notebook")
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+      "# doc",
+      "```sql",
+      "select 1;",
+      "```",
+      "prose",
+      "```lua",
+      "print(1)",
+      "```",
+      "```sql",
+      "select 2;",
+      "```",
+    })
+
+    local blocks = notebook.blocks(bufnr)
+    t.eq(#blocks, 2, "only the sql blocks count")
+    t.eq(blocks[1].sql, "select 1;")
+    t.eq(blocks[2].sql, "select 2;")
+  end,
+
+  ["ignores an unterminated block"] = function()
+    local notebook = require("dbclient.notebook")
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "```sql", "select 1;" })
+    t.eq(notebook.blocks(bufnr), {})
+  end,
+})
