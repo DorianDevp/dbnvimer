@@ -68,6 +68,7 @@ M.groups = {
       { lhs = "V", action = "schema_drift", desc = "compare the server against the committed schema" },
       { lhs = "/", action = "replace_in_schema", desc = "find and replace across every table" },
       { lhs = "!", action = "error_detail", desc = "explain the last error in full" },
+      { lhs = "W", action = "statements", desc = "what this server has been running, ranked" },
     },
   },
 
@@ -149,6 +150,24 @@ Only navigation and inspection are mapped, so nothing shadows an editing key.]],
       { lhs = "[r", action = "prev_row", desc = "previous row" },
       { lhs = "]p", action = "next_page", desc = "next page" },
       { lhs = "[p", action = "prev_page", desc = "previous page" },
+      { lhs = "g?", action = "help", desc = "show this help" },
+    },
+  },
+
+  statements = {
+    title = "Statement workload",
+    description = [[
+Every statement the *server* has run, aggregated by it and ranked by total time
+rather than by average — which is what finds the query that takes four
+milliseconds eighty thousand times an hour. Snapshots compare against it later,
+so "this got eleven times slower" is a fact rather than a feeling.]],
+    keys = {
+      { lhs = "<CR>", action = "open", desc = "open it in a query buffer to fill in the parameters" },
+      { lhs = "gy", action = "yank", desc = "yank the statement" },
+      { lhs = "s", action = "snapshot", desc = "save the current counters" },
+      { lhs = "c", action = "compare", desc = "compare against a saved snapshot" },
+      { lhs = "gr", action = "refresh", desc = "read the counters again" },
+      { lhs = "q", action = "close", desc = "close" },
       { lhs = "g?", action = "help", desc = "show this help" },
     },
   },
@@ -347,6 +366,7 @@ M.order = {
   "export",
   "result",
   "record",
+  "statements",
   "ddl",
   "explain",
   "activity",

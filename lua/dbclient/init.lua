@@ -476,6 +476,32 @@ local function define_commands()
     require("dbclient.ui.help").show_all()
   end, { force = true })
 
+  command("DBClientStatements", function(args)
+    local target = session.current()
+    if not target then
+      return notify("no active connection", vim.log.levels.WARN)
+    end
+    if args.bang then
+      client.async(function()
+        local path = require("dbclient.statements").save({
+          session_id = target.id,
+          connection = target.name,
+          label = args.args ~= "" and args.args or nil,
+        })
+        notify("snapshot saved to " .. vim.fn.fnamemodify(path, ":~"))
+      end, function(err)
+        require("dbclient.errors").handle(err, nil, { session_id = target.id })
+      end)
+      return
+    end
+    require("dbclient.statements").prompt()
+  end, {
+    nargs = "?",
+    bang = true,
+    force = true,
+    desc = "What this server has been running, ranked (! saves a snapshot)",
+  })
+
   command("DBClientRecord", function()
     require("dbclient.neighbourhood").from_cursor()
   end, { force = true, desc = "Everything related to the row under the cursor" })
@@ -827,6 +853,9 @@ local function global_handlers()
     end,
     error_detail = function()
       require("dbclient.errors").show_last()
+    end,
+    statements = function()
+      require("dbclient.statements").prompt()
     end,
     compare = function()
       vim.ui.select({

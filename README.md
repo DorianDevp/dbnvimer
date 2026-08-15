@@ -307,6 +307,7 @@ Available everywhere; prefixed with `g:dbclient_leader` (default `<leader>d`).
 | `<leader>dV` | compare the server against the committed schema |
 | `<leader>d/` | find and replace across every table |
 | `<leader>d!` | explain the last error in full |
+| `<leader>dW` | what this server has been running, ranked |
 
 ### Sidebar
 
@@ -480,6 +481,20 @@ One row with everything the schema says is connected to it: the row itself, the 
 | `gu` | reveal masked values |
 | `gr` | fetch the record again |
 | `q` | close the record |
+| `g?` | show this help |
+
+### Statement workload
+
+Every statement the *server* has run, aggregated by it and ranked by total time rather than by average — which is what finds the query that takes four milliseconds eighty thousand times an hour. Snapshots compare against it later, so "this got eleven times slower" is a fact rather than a feeling.
+
+| key | action |
+| --- | --- |
+| `<CR>` | open it in a query buffer to fill in the parameters |
+| `gy` | yank the statement |
+| `s` | save the current counters |
+| `c` | compare against a saved snapshot |
+| `gr` | read the counters again |
+| `q` | close |
 | `g?` | show this help |
 
 ### DDL buffer
