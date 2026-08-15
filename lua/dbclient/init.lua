@@ -425,6 +425,53 @@ local function define_commands()
     })
   end, { force = true, desc = "Open a saved export preset" })
 
+  command("DBClientFixture", function(args)
+    local parts = vim.split(args.args, "%s+")
+    local qualified = vim.split(parts[1] or "", ".", { plain = true })
+    if #qualified ~= 2 or not parts[2] then
+      return notify("usage: DBClientFixture schema.table key=value [key=value]", vim.log.levels.ERROR)
+    end
+
+    local pk = {}
+    for index = 2, #parts do
+      local key, value = parts[index]:match("^([%w_]+)=(.*)$")
+      if key then
+        pk[key] = value
+      end
+    end
+    if vim.tbl_isempty(pk) then
+      return notify("give the row's key as key=value", vim.log.levels.ERROR)
+    end
+
+    require("dbclient.fixture").extract({
+      schema = qualified[1],
+      table = qualified[2],
+      pk = pk,
+      children = args.bang,
+    })
+  end, {
+    nargs = "+",
+    bang = true,
+    force = true,
+    desc = "Extract a row and its dependencies as INSERTs (! also pulls children)",
+  })
+
+  command("DBClientHypoIndex", function(args)
+    require("dbclient.hypo").prompt({ sql = args.args ~= "" and args.args or nil })
+  end, { nargs = "*", force = true, desc = "Test an index without building it" })
+
+  command("DBClientTail", function(args)
+    require("dbclient.cdc").start({ filter = args.args ~= "" and args.args or nil })
+  end, { nargs = "?", force = true, desc = "Follow committed changes" })
+
+  command("DBClientTailStop", function()
+    require("dbclient.cdc").stop_all()
+  end, { force = true, desc = "Stop following changes" })
+
+  command("DBClientTailCheck", function()
+    require("dbclient.cdc").diagnose()
+  end, { force = true, desc = "Explain what change streaming needs here" })
+
   command("DBClientHelp", function()
     require("dbclient.ui.help").show_all()
   end, { force = true })
@@ -454,6 +501,10 @@ local function define_autocommands()
         require("dbclient.workspace").save()
       end)
       require("dbclient.watch").stop_all()
+      -- A replication slot left behind holds WAL forever.
+      pcall(function()
+        require("dbclient.cdc").stop_all()
+      end)
       session.disconnect_all()
       client.stop()
     end,
@@ -669,6 +720,15 @@ local function global_handlers()
           table = choice.table,
         })
       end)
+    end,
+    fixture = function()
+      require("dbclient.fixture").from_cursor()
+    end,
+    hypothetical_index = function()
+      require("dbclient.hypo").prompt()
+    end,
+    tail = function()
+      require("dbclient.cdc").start()
     end,
     compare = function()
       vim.ui.select({

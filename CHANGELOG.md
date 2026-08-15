@@ -150,6 +150,29 @@ binary will be rejected with a clear message rather than misbehaving.
   breadcrumb sits in the winbar. Navigating from a rewound position drops the
   forward branch, the way a browser does.
 
+### Test data, indexes and change streams
+
+- **Fixture extraction** (`gx`): a row plus everything it needs to exist, as
+  `INSERT`s in an order the foreign keys accept. The graph is walked upward to
+  required parents and optionally one level down to children, tables are
+  sorted so parents come first, and columns can be redacted on the way out. A
+  cycle between tables is reported rather than emitted in an order that cannot
+  work. The literals come from the export writer, so the escaping is the one
+  already under test.
+- **Hypothetical indexes** (`:DBClientHypoIndex`): on PostgreSQL with HypoPG,
+  register an index the planner can see but that occupies no disk, re-plan, and
+  compare. Verified against a 200 000 row table: a useful index reports
+  "2.7x cheaper, Seq Scan → Bitmap Index Scan", a useless one reports "the
+  planner would not use it". The hypothetical index is always dropped, and the
+  test checks that nothing real was created.
+- **Change streams** (`:DBClientTail`): committed inserts, updates and deletes
+  as they happen, through a PostgreSQL logical replication slot using the
+  built-in `test_decoding` plugin, or the MySQL binary log. The parser is
+  checked against real decoded WAL from a live server. Because this has several
+  prerequisites, `:DBClientTailCheck` reports exactly which one is missing and
+  what to change — and the replication slot is dropped on stop and on exit,
+  since a slot left behind holds WAL until the disk fills.
+
 ### Export
 
 Rebuilt around the parts other clients leave to a checkbox nobody finds. The
@@ -228,7 +251,7 @@ independent of each other.
 
 ### Testing
 
-- 102 Rust unit tests, 233 Lua tests (including an end-to-end suite driving real
+- 102 Rust unit tests, 252 Lua tests (including an end-to-end suite driving real
   buffers against a real database), and 49 adapter tests each against a live
   PostgreSQL and MariaDB server.
 - `scripts/protocol_smoke.py` exercises the wire protocol over stdio.

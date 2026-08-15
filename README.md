@@ -43,7 +43,7 @@ always one line.
 
 Early software under active development, built with AI-assisted rapid
 development. The core protocol, the editable data buffer and the safety rails
-are covered by tests: 102 Rust, 233 Lua including an end-to-end suite driving
+are covered by tests: 102 Rust, 252 Lua including an end-to-end suite driving
 real buffers, and 49 adapter tests each against a live PostgreSQL and MariaDB
 server. The adapters still want exercising against real production schemas
 before a 1.0.
@@ -243,6 +243,9 @@ matters, so several things guard against it:
 | `:DBClientChart` | chart the current result set |
 | `:DBClientExport [schema.table]` | the export editor |
 | `:DBClientExportPreset` | open a saved export preset |
+| `:DBClientFixture[!] schema.table k=v` | extract a row and its dependencies as INSERTs |
+| `:DBClientHypoIndex [sql]` | test an index without building it |
+| `:DBClientTail [table]` / `TailStop` / `TailCheck` | follow committed changes |
 | `:DBClientWorkspaceSave` / `Restore` / `Show` / `Clear` | the open tables and queries for this project |
 | `:DBClientHelp` | every mapping in one buffer |
 | `:DBClientRestart` | restart the core |
@@ -293,6 +296,9 @@ Available everywhere; prefixed with `g:dbclient_leader` (default `<leader>d`).
 | `<leader>dg` | chart the current result set |
 | `<leader>dR` | show what the statement would change |
 | `<leader>de` | export a table or the last result |
+| `<leader>dF` | extract a row plus everything it needs |
+| `<leader>dI` | would this index help? |
+| `<leader>dT` | follow changes as they are committed |
 
 ### Sidebar
 
@@ -355,6 +361,7 @@ Only navigation and inspection are mapped, so nothing shadows an editing key.
 | `gn` | set this cell to SQL NULL |
 | `gy` | yank cell, row or selection as... |
 | `gp` | duplicate this row as a new INSERT |
+| `gx` | extract this row plus everything it needs |
 | `gr` | reload from the database |
 | `gD` | open the DDL for this table |
 | `gG` | generate code from this table |
@@ -689,6 +696,70 @@ saying so.
 
 `:w report.csv` on a result buffer still works for the simple case; the editor
 is for when the details matter.
+
+## Test data, indexes and change streams
+
+**`gx` on a row extracts a fixture**: that row plus everything it needs to
+exist, as `INSERT`s in an order the foreign keys accept.
+
+```sql
+-- fixture: 5 row(s) across 4 table(s)
+-- Parents first, so the foreign keys are satisfiable in this order.
+
+-- public.fx_countries  (1 row(s))
+insert into "public"."fx_countries" ("id", "code") values (1, 'PL');
+
+-- public.fx_addresses  (1 row(s))
+insert into "public"."fx_addresses" ("id", "country_id", "city") values (10, 1, 'Łódź');
+
+-- public.fx_customers  (1 row(s))
+insert into "public"."fx_customers" ("id", "address_id", "name", "email")
+  values (100, 10, 'ACME Sp. z o.o.', 'REDACTED');
+```
+
+With `!` it also pulls the rows that reference the starting row. Columns can be
+redacted on the way out. Tables that reference each other are reported as a
+cycle rather than emitted in an order that cannot work.
+
+**`:DBClientHypoIndex` asks whether an index would help, before building it.**
+On PostgreSQL with [HypoPG](https://github.com/HypoPG/hypopg) installed, an
+index is registered that the planner can see but that occupies no disk:
+
+```
+create index on fx_events (customer_id)
+
+2.7x cheaper
+
+cost   3774.00  →  1399.53
+plan   Seq Scan
+  →    Bitmap Heap Scan, Bitmap Index Scan
+
+The planner chose the index.
+```
+
+and when it would not help, it says so instead:
+
+```
+no measurable difference — the planner would not use it
+The planner did not choose it, so building it would cost disk and
+write time for nothing.
+```
+
+**`:DBClientTail` follows committed changes** — `tail -f` for a table, through
+a PostgreSQL logical replication slot or the MySQL binary log:
+
+```
+── begin 735
+INSERT public.cdc_demo   id[integer]:1 name[text]:'Łódź' qty[integer]:3
+UPDATE public.cdc_demo   id[integer]:1 name[text]:'Łódź' qty[integer]:4
+DELETE public.cdc_demo   id[integer]:1
+── commit 735
+```
+
+This needs `wal_level = logical` or row-format binary logging, plus the client
+tool that ships with each database. `:DBClientTailCheck` says exactly which
+prerequisite is missing and how to fix it, and the replication slot is dropped
+when you stop — a slot left behind holds WAL until the disk fills.
 
 ## Understanding a schema
 

@@ -333,6 +333,9 @@ Available everywhere; prefixed with `g:dbclient_leader` (default
     <leader>dg       chart the current result set
     <leader>dR       show what the statement would change
     <leader>de       export a table or the last result
+    <leader>dF       extract a row plus everything it needs
+    <leader>dI       would this index help?
+    <leader>dT       follow changes as they are committed
 
 SIDEBAR
 
@@ -397,6 +400,7 @@ key.
     gn               set this cell to SQL NULL
     gy               yank cell, row or selection as...
     gp               duplicate this row as a new INSERT
+    gx               extract this row plus everything it needs
     gr               reload from the database
     gD               open the DDL for this table
     gG               generate code from this table

@@ -1068,6 +1068,9 @@ function M.handlers()
     generate = M.generate,
     import = M.import,
     export = M.export,
+    fixture = function()
+      require("dbclient.fixture").from_cursor()
+    end,
     follow_reverse = M.follow_reverse,
     trail_back = function()
       trail.back()
