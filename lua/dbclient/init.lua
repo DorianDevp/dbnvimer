@@ -476,6 +476,10 @@ local function define_commands()
     require("dbclient.ui.help").show_all()
   end, { force = true })
 
+  command("DBClientRecord", function()
+    require("dbclient.neighbourhood").from_cursor()
+  end, { force = true, desc = "Everything related to the row under the cursor" })
+
   command("DBClientError", function()
     require("dbclient.errors").show_last()
   end, { force = true, desc = "Explain the last error in full" })

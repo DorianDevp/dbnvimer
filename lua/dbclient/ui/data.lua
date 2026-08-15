@@ -1166,6 +1166,9 @@ end
 function M.handlers()
   return {
     inspect_value = M.inspect_value,
+    record = function()
+      require("dbclient.neighbourhood").from_cursor()
+    end,
     follow_fk = M.follow_fk,
     find_references = M.find_references,
     column_stats = M.column_stats,

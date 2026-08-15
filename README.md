@@ -353,6 +353,7 @@ Only navigation and inspection are mapped, so nothing shadows an editing key.
 | key | action |
 | --- | --- |
 | `K` | inspect the full cell value |
+| `gK` | the whole record: everything related to this row |
 | `gd` | follow the foreign key under the cursor |
 | `gU` | open the rows that reference this one |
 | `gu` | list referencing rows in the quickfix |
@@ -467,6 +468,18 @@ Read-only grid. `:w name.csv` exports; the format follows the extension.
 | `]r` | next row |
 | `[r` | previous row |
 | `q` | close the result buffer |
+| `g?` | show this help |
+
+### Record
+
+One row with everything the schema says is connected to it: the row itself, the row behind every foreign key it holds, and a sample of every row that points back at it. Each section is a fold, so `zo`, `zc` and `zR` do what they always do.
+
+| key | action |
+| --- | --- |
+| `<CR>` | open this table, filtered to these rows |
+| `gu` | reveal masked values |
+| `gr` | fetch the record again |
+| `q` | close the record |
 | `g?` | show this help |
 
 ### DDL buffer

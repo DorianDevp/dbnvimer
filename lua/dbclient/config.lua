@@ -77,6 +77,15 @@ local defaults = {
     --- Pin the header row as a winbar while scrolling.
     sticky_header = true,
 
+    --- Column names whose values the record view hides until asked.
+    ---
+    --- Matched as substrings of the lowercased column name. This is a display
+    --- preference with a visible list, not an attempt to work out what a
+    --- column means: nothing is inferred and nothing is hidden that is not
+    --- named here. `gu` reveals them.
+    mask_columns = { "password", "passwd", "secret", "token", "api_key", "private_key", "salt" },
+    mask_with = "••••••••",
+
     --- How the grid draws its rules: `"line"` uses box-drawing characters,
     --- `"ascii"` is the fallback for terminals or fonts that mangle them.
     --- Stored values are identical either way, so this is safe to change.

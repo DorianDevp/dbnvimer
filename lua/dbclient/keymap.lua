@@ -120,6 +120,7 @@ applies them in one transaction.
 Only navigation and inspection are mapped, so nothing shadows an editing key.]],
     keys = {
       { lhs = "K", action = "inspect_value", desc = "inspect the full cell value" },
+      { lhs = "gK", action = "record", desc = "the whole record: everything related to this row" },
       { lhs = "gd", action = "follow_fk", desc = "follow the foreign key under the cursor" },
       { lhs = "gU", action = "follow_reverse", desc = "open the rows that reference this one" },
       { lhs = "gu", action = "find_references", desc = "list referencing rows in the quickfix" },
@@ -148,6 +149,22 @@ Only navigation and inspection are mapped, so nothing shadows an editing key.]],
       { lhs = "[r", action = "prev_row", desc = "previous row" },
       { lhs = "]p", action = "next_page", desc = "next page" },
       { lhs = "[p", action = "prev_page", desc = "previous page" },
+      { lhs = "g?", action = "help", desc = "show this help" },
+    },
+  },
+
+  record = {
+    title = "Record",
+    description = [[
+One row with everything the schema says is connected to it: the row itself, the
+row behind every foreign key it holds, and a sample of every row that points
+back at it. Each section is a fold, so `zo`, `zc` and `zR` do what they always
+do.]],
+    keys = {
+      { lhs = "<CR>", action = "open", desc = "open this table, filtered to these rows" },
+      { lhs = "gu", action = "unmask", desc = "reveal masked values" },
+      { lhs = "gr", action = "refresh", desc = "fetch the record again" },
+      { lhs = "q", action = "close", desc = "close the record" },
       { lhs = "g?", action = "help", desc = "show this help" },
     },
   },
@@ -329,6 +346,7 @@ M.order = {
   "queries",
   "export",
   "result",
+  "record",
   "ddl",
   "explain",
   "activity",

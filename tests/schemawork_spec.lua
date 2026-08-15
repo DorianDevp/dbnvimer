@@ -822,3 +822,73 @@ t.describe("the case-insensitive footnote", {
     t.falsy(text:find("case is ignored", 1, true))
   end,
 })
+
+local neighbourhood = require("dbclient.neighbourhood")
+
+t.describe("the record view", {
+  ["names a row by whatever names it"] = function()
+    local columns = {
+      { name = "id", class = "number" },
+      { name = "title", class = "text" },
+      { name = "created_at", class = "temporal" },
+    }
+    t.eq(
+      neighbourhood.summarise({ "4412", "Awaria drukarki", "2026-08-11" }, columns, { "id" }),
+      "#4412  Awaria drukarki"
+    )
+  end,
+
+  ["falls back to the first text column that is not a key"] = function()
+    local columns = {
+      { name = "id", class = "number" },
+      { name = "user_id", class = "number" },
+      { name = "note", class = "text" },
+    }
+    t.eq(neighbourhood.label_column(columns), 3)
+  end,
+
+  ["says nothing rather than guessing when nothing names the row"] = function()
+    t.eq(neighbourhood.label_column({
+      { name = "id", class = "number" },
+      { name = "total", class = "number" },
+    }), nil)
+  end,
+
+  ["identifies a row with no primary key by its first column"] = function()
+    local columns = { { name = "code", class = "text" } }
+    t.matches(neighbourhood.summarise({ "AB" }, columns, {}), "#AB")
+  end,
+
+  ["picks the key, the name and the date for a child grid"] = function()
+    local columns = {
+      { name = "id", class = "number" },
+      { name = "inquiry_id", class = "number" },
+      { name = "body", class = "text" },
+      { name = "created_at", class = "temporal" },
+      { name = "updated_at", class = "temporal" },
+    }
+    -- Not every column, which is unreadable, and not just the key, which says
+    -- nothing. One date, not both.
+    t.eq(neighbourhood.child_columns(columns, { "id" }), { 1, 3, 4 })
+  end,
+
+  ["hides only the columns the configuration names"] = function()
+    t.ok(neighbourhood.masked("password"))
+    t.ok(neighbourhood.masked("password_hash"), "matched as a substring")
+    t.ok(neighbourhood.masked("API_KEY"), "and case-insensitively")
+    -- Nothing is inferred from the values, so an ordinary column stays visible
+    -- however secret it looks.
+    t.falsy(neighbourhood.masked("email"))
+    t.falsy(neighbourhood.masked("iban"))
+  end,
+
+  ["folds every section and nothing else"] = function()
+    t.eq(neighbourhood.fold_level("  ▾ user  ← user_id   #9  Jan"), ">1")
+    t.eq(neighbourhood.fold_level("  ▸ device  → user_id   3 rows"), ">1")
+    t.eq(neighbourhood.fold_level("      id    9"), "1")
+    -- The root row is indented two and must not be swallowed by a fold.
+    t.eq(neighbourhood.fold_level("  email  jan@ventia.pl"), "0")
+    t.eq(neighbourhood.fold_level("serwis.inquiry   #1"), "0")
+    t.eq(neighbourhood.fold_level(""), "0")
+  end,
+})
