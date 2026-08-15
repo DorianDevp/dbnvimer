@@ -11,7 +11,13 @@
 
 local config = require("dbclient.config")
 
-local M = {}
+local M = {
+  --- Actions declared in a group but not supplied by the module that applied
+  --- it. Always a bug — the key would exist and do nothing — so the test suite
+  --- asserts this stays empty after the UI has been exercised.
+  ---@type { group: string, action: string, lhs: string }[]
+  unmatched = {},
+}
 
 --- Mapping groups, in the order they should appear in generated docs.
 ---@type table<string, { title: string, description: string, keys: table[] }>
@@ -360,6 +366,13 @@ function M.apply(group, bufnr, handlers, opts)
   opts = opts or {}
   for _, entry in ipairs(spec.keys) do
     local handler = handlers[entry.action]
+    if not handler and entry.action then
+      table.insert(M.unmatched, {
+        group = group,
+        action = entry.action,
+        lhs = M.lhs(group, entry),
+      })
+    end
     if handler then
       local modes = entry.mode or "n"
       vim.keymap.set(modes, M.lhs(group, entry), handler, {

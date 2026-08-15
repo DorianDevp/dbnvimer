@@ -209,6 +209,8 @@ matters, so several things guard against it:
 | `:DBClient` / `:DBClientToggle` | open or toggle the sidebar |
 | `:DBClientConnect [name]` | connect, or pick from a list |
 | `:DBClientDisconnect [name]` | close one connection |
+| `:DBClientClose` | close every connection |
+| `:DBClientSessions` | switch between open connections |
 | `:DBClientConnections` | the connection manager |
 | `:DBClientData [schema.]table` | open a table's data buffer |
 | `:DBClientQuery` | run the statement at the cursor |
@@ -247,6 +249,7 @@ matters, so several things guard against it:
 | `:DBClientHypoIndex [sql]` | test an index without building it |
 | `:DBClientTail [table]` / `TailStop` / `TailCheck` | follow committed changes |
 | `:DBClientWorkspaceSave` / `Restore` / `Show` / `Clear` | the open tables and queries for this project |
+| `:DBClientTailStop` | stop following changes and drop the slot |
 | `:DBClientHelp` | every mapping in one buffer |
 | `:DBClientRestart` | restart the core |
 

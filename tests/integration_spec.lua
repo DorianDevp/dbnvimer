@@ -814,3 +814,47 @@ t.describe("integration: shutdown", {
     end)
     client.stop()
   end },})
+
+t.describe("integration: mapping coverage", {
+  { "every declared action has a handler in every UI that was opened", function()
+    local keymap_module = require("dbclient.keymap")
+    keymap_module.unmatched = {}
+
+    -- Open one of each buffer so its mappings are actually applied. A typo in
+    -- an action name produces a key that exists and does nothing, which is
+    -- invisible until someone presses it.
+    require("dbclient.ui.sidebar").open()
+    require("dbclient.ui.scratch").open({ session_id = connected.id })
+    require("dbclient.ui.queries").open({ session_id = connected.id })
+    require("dbclient.export.ui").open({
+      session_id = connected.id,
+      schema = "main",
+      table = "customers",
+    })
+    require("dbclient.ui.results").show({
+      columns = { { name = "a", type = "text", class = "text" } },
+      rows = { { "x" } },
+      elapsed_ms = 0,
+      affected_rows = 0,
+    }, { session_id = connected.id })
+    require("dbclient.ui.data").open({
+      session_id = connected.id,
+      schema = "main",
+      table = "customers",
+      filter = "",
+    })
+
+    wait_for(function()
+      return true
+    end, 500, "ui")
+    vim.wait(1500, function()
+      return false
+    end, 50)
+
+    local problems = {}
+    for _, entry in ipairs(keymap_module.unmatched) do
+      table.insert(problems, ("%s.%s (%s)"):format(entry.group, entry.action, entry.lhs))
+    end
+    t.eq(problems, {}, "actions with no handler")
+  end },
+})
