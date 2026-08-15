@@ -358,7 +358,14 @@ impl DbSession for PostgresSession {
                    case when pk.attnum is not null then 'PRI' else '' end,
                    pg_get_expr(d.adbin, d.adrelid),
                    pg_catalog.col_description(c.oid, a.attnum),
-                   a.attnum
+                   a.attnum,
+                   -- An enum in PostgreSQL is a user-defined type, so
+                   -- `format_type` reports its *name* and the labels live in
+                   -- `pg_enum`. Without them the client sees an unknown type
+                   -- and can say nothing about which values are legal — which
+                   -- is exactly what a column declaring an enum has told it.
+                   (select string_agg(quote_literal(e.enumlabel), ',' order by e.enumsortorder)
+                      from pg_enum e where e.enumtypid = a.atttypid)
             from pg_attribute a
             join pg_class c on c.oid = a.attrelid
             join pg_namespace n on n.oid = c.relnamespace
@@ -380,6 +387,13 @@ impl DbSession for PostgresSession {
             .iter()
             .map(|row| {
                 let type_name = text(row.get(1));
+                // Written the way MySQL writes it, so the front end has one
+                // shape to read rather than one per backend.
+                let enum_type = row
+                    .get(7)
+                    .and_then(JsonValue::as_str)
+                    .filter(|list| !list.is_empty())
+                    .map(|list| format!("enum({list})"));
                 json!({
                     "name": text(row.first()),
                     "type": type_name,
@@ -389,6 +403,7 @@ impl DbSession for PostgresSession {
                     "default": optional(row.get(4)),
                     "comment": optional(row.get(5)),
                     "position": text(row.get(6)).parse::<i64>().unwrap_or(0),
+                    "values": enum_type,
                 })
             })
             .collect())

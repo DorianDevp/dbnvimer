@@ -31,6 +31,10 @@ local M = {
 local HEADER_LINES = 3
 local ns_rows = vim.api.nvim_create_namespace("dbclient-data-rows")
 
+--- Its own namespace so schema findings and server errors can coexist without
+--- either clearing the other.
+local constraint_ns = vim.api.nvim_create_namespace("dbclient-data-constraints")
+
 --- The view attached to a buffer.
 ---@param bufnr integer|nil
 ---@return table|nil
@@ -290,6 +294,21 @@ local function load(view)
     end
   end
 
+  -- The result set describes each column as the *query* produced it: an enum
+  -- arrives as `enum`, a varchar as `varchar`, with no values and no length.
+  -- The declared type — the one that says `enum('new','open','closed')` and
+  -- `varchar(8)` — only comes from the catalogue, and it is what validation
+  -- has to check against. Cached by the session, so this costs nothing after
+  -- the first open.
+  view.meta = {}
+  local described, catalogue =
+    pcall(session.columns, view.session_id, view.schema, view.table)
+  if described then
+    for _, column in ipairs(catalogue) do
+      view.meta[column.name] = column
+    end
+  end
+
   -- Row counts are a separate round trip so a slow `count(*)` never delays the
   -- rows themselves.
   M.render(view)
@@ -438,6 +457,9 @@ function M.read_entries(view)
       table.insert(entries, {
         id = id_by_line[HEADER_LINES + offset - 1],
         cells = grid.parse_row(line),
+        -- Kept so a validation finding can be placed on the cell it came from
+        -- rather than reported as a message about the buffer in general.
+        line = HEADER_LINES + offset - 1,
       })
     end
   end
@@ -522,6 +544,79 @@ local function confirm(view, result, on_confirm)
 end
 
 --- `:w` handler.
+--- Check every pending edit against what the schema declares, and show the
+--- findings on the cells they came from.
+---
+--- This is the same job `dbclient.errors` does, done early enough that the
+--- server never has to refuse the write. The metadata is already in hand; the
+--- round trip was the only thing making it feel like a question worth asking
+--- the database.
+---@param view table
+---@return table[] findings
+function M.validate(view)
+  local ok, result = pcall(M.pending, view)
+  if not ok then
+    return {}
+  end
+
+  -- Validate against the declared types, falling back to the result set's
+  -- description for anything the catalogue did not cover (a computed column,
+  -- a view).
+  local columns = {}
+  for _, column in ipairs(view.columns) do
+    table.insert(columns, view.meta and view.meta[column.name] or column)
+  end
+
+  local findings = require("dbclient.constraints").check_changes({
+    changes = result.changes,
+    columns = columns,
+    bool_display = config.get().ui.bool_display,
+  })
+
+  local diagnostics = {}
+  for _, finding in ipairs(findings) do
+    local line = finding.line or HEADER_LINES
+    local text = vim.api.nvim_buf_get_lines(view.bufnr, line, line + 1, false)[1] or ""
+    local spans = grid.line_spans(text, view.spans)
+    local span = finding.column_index and spans[finding.column_index]
+
+    table.insert(diagnostics, {
+      lnum = line,
+      col = span and span.start or 0,
+      end_lnum = line,
+      end_col = span and math.min(span.finish, #text) or math.max(1, #text),
+      severity = vim.diagnostic.severity.ERROR,
+      source = "dbclient",
+      message = finding.hint and (finding.message .. " — " .. finding.hint) or finding.message,
+    })
+  end
+
+  vim.diagnostic.set(constraint_ns, view.bufnr, diagnostics, {})
+  return findings
+end
+
+--- Re-check after an edit settles.
+---
+--- Debounced because it re-diffs the whole buffer, and because a diagnostic
+--- that appears on every keystroke while a value is half-typed is noise.
+---@param view table
+function M.validate_soon(view)
+  if view.validate_timer then
+    view.validate_timer:stop()
+    view.validate_timer:close()
+  end
+  view.validate_timer = vim.uv.new_timer()
+  view.validate_timer:start(
+    350,
+    0,
+    vim.schedule_wrap(function()
+      if vim.api.nvim_buf_is_valid(view.bufnr) then
+        pcall(M.validate, view)
+      end
+    end)
+  )
+end
+
 function M.write()
   local view = M.view()
   if not view then
@@ -544,6 +639,21 @@ function M.write()
   if #result.changes == 0 then
     vim.bo[view.bufnr].modified = false
     return notify("no changes to write")
+  end
+
+  -- Refuse rather than let the server refuse: the answer is already known and
+  -- a failed write inside a transaction is a worse place to find out.
+  local findings = M.validate(view)
+  if #findings > 0 then
+    local first = findings[1]
+    notify(
+      ("%d edit(s) the schema will not accept — %s"):format(#findings, first.message),
+      vim.log.levels.ERROR
+    )
+    if first.line then
+      pcall(vim.api.nvim_win_set_cursor, 0, { first.line + 1, 0 })
+    end
+    return
   end
 
   confirm(view, result, function()
@@ -1123,9 +1233,29 @@ function M.attach(view)
     end,
   })
 
+  -- Check as you type. The schema already said what is legal, so a value the
+  -- column will not hold should be marked where it was typed rather than
+  -- reported after a round trip.
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+    buffer = bufnr,
+    callback = function()
+      local current = M.view(bufnr)
+      if current then
+        M.validate_soon(current)
+      end
+    end,
+  })
+
   vim.api.nvim_create_autocmd("BufWipeout", {
     buffer = bufnr,
     callback = function()
+      local current = M.views[bufnr]
+      if current and current.validate_timer then
+        pcall(function()
+          current.validate_timer:stop()
+          current.validate_timer:close()
+        end)
+      end
       M.views[bufnr] = nil
     end,
   })

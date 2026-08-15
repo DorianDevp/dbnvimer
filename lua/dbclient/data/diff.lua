@@ -144,7 +144,10 @@ function M.reconcile(entries, opts)
 
   local out = {}
   for index, entry in ipairs(entries) do
-    table.insert(out, { id = resolved[index], cells = entry.cells })
+    -- `line` rides along: it is what lets a validation finding land on the
+    -- cell it came from instead of being reported as a message about the
+    -- buffer in general.
+    table.insert(out, { id = resolved[index], cells = entry.cells, line = entry.line })
   end
   return out
 end
@@ -208,6 +211,7 @@ function M.compute(opts)
                   expect[column.name] = old_value
                   table.insert(described, {
                     column = column.name,
+                    column_index = column_index,
                     from = old_value,
                     to = new_value,
                   })
@@ -229,6 +233,10 @@ function M.compute(opts)
               set = set,
               pk = pk,
               expect = expect,
+              -- Where in the buffer this came from. Ignored by the core, which
+              -- receives only the fields it declares.
+              line = entry.line,
+              cells = described,
             })
             table.insert(summary, {
               op = "update",
@@ -249,7 +257,11 @@ function M.compute(opts)
         if column and vim.trim(cell_text) ~= "" then
           local value = grid.parse_value(cell_text, column)
           values[column.name] = value
-          table.insert(described, { column = column.name, to = value })
+          table.insert(described, {
+            column = column.name,
+            column_index = column_index,
+            to = value,
+          })
           any = true
         end
       end
@@ -260,6 +272,8 @@ function M.compute(opts)
           schema = opts.schema,
           table = opts.table,
           values = values,
+          line = entry.line,
+          cells = described,
         })
         table.insert(summary, { op = "insert", columns = described })
       end
