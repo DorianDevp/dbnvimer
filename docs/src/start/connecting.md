@@ -1,18 +1,14 @@
 # Connecting
 
-Press `<leader>dd`, or run `:DBClient`.
-
-## The first time
-
-A 38-column panel opens on the left, the cursor goes into it, and — if you
-have configured nothing and the project declares nothing — it says exactly
-this:
+`<leader>dd` opens the sidebar. With nothing configured it says:
 
 ```text
   no connections; press a to add one
 ```
 
-That is the whole sidebar. Press `a`.
+## Adding one
+
+`a`:
 
 ```text
 add a connection
@@ -30,22 +26,17 @@ add a connection
 t test   <CR> save   q cancel
 ```
 
-`t` tries the connection without saving it, which is the fastest way to find
-out whether the password is right.
+`t` tries it without saving, which is the quickest way to check a password.
 
-## Once there is something to connect to
+## Connecting
 
 ```text
 ▸ ○ reporting  (read)
 ▸ ○ shop
 ```
 
-One line per connection. `○` is closed, `●` is open, and the access level is
-shown when it is not the default. Detected connections — the ones DBClient
-found in your `.env` or `docker-compose.yml` without being told — appear in a
-dimmer colour.
-
-Put the cursor on one and press `<CR>`:
+`○` closed, `●` open. Access is shown when it is not the default. `<CR>`
+connects and expands in one keystroke:
 
 ```text
 ▸ ○ reporting  (read)
@@ -53,24 +44,16 @@ Put the cursor on one and press `<CR>`:
   ▸ main
 ```
 
-It connected and expanded in one keystroke. The schema is underneath.
-
 ## Connections you never configured
 
-On start, and on every `:cd`, DBClient walks up from the working directory
-reading files the project already has.
+On start and on every `:cd`, DBClient reads what the project already has:
+`.env`, `docker-compose.yml`, Rails' `database.yml`, and `.dbclient.lua`.
+Those appear dimmed. Nothing is written anywhere until you press `y` on one in
+the connection manager.
 
-| Source | What it reads |
-|---|---|
-| `env` | `.env`, `.env.local`, and friends |
-| `docker_compose` | service definitions and their environment |
-| `database_yml` | Rails' `config/database.yml` |
-| `dbclient_lua` | a `.dbclient.lua` you wrote yourself |
+Turn it off with `detect = { enabled = false }`.
 
-Nothing is copied anywhere until you press `y` on one in the connection
-manager, which turns it into a stored connection you can edit.
+## If it fails
 
-## If it does not connect
-
-You get a panel naming which layer broke, rather than one line about a refused
-connection. See [Connections that will not open](../errors/connections.md).
+You get a panel naming the layer that broke. See [Connections that
+fail](../errors/connections.md).

@@ -3,7 +3,7 @@
 `<leader>dA`, or `gA` on a schema in the sidebar.
 
 ```text
-shop — 15 findings
+shop  ·  15 findings
 
   [hint] order_items    IDX_A7AD6D71 (order_id) is a prefix of
                         PRIMARY (order_id, product_id)
@@ -30,7 +30,7 @@ SQL that fixes it.
 
 An ORM adds a single-column index for every relation. On a join table whose
 primary key is `(order_id, product_id)`, the separate index on `order_id` is
-dead weight — the primary key already starts with it.
+dead weight, because the primary key already starts with it.
 
 The check is precise about this: the index on the *second* column is not a
 prefix of anything and is genuinely needed for the reverse lookup, so it is

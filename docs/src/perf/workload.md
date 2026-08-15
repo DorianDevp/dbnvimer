@@ -13,10 +13,7 @@ dev   204 statements   via performance_schema
 
 Ranked by **total** time, not average. The statement that takes four
 milliseconds eighty thousand times an hour is the problem, and no slow-query
-threshold ever catches it.
-
-The activity monitor answers "what is happening now". This answers "what has
-been happening", which is the question behind every performance complaint.
+threshold catches it.
 
 ## Where it comes from
 
@@ -27,7 +24,7 @@ been happening", which is the question behind every performance complaint.
 
 ## What is marked
 
-A statement that examines far more rows than it returns is coloured — that is
+A statement that examines far more rows than it returns is coloured. That is
 the shape of a missing index, and it is worth seeing from across the room.
 
 ## Opening one
@@ -49,7 +46,7 @@ dev is not keeping statement statistics
   performance_schema is off
 
   MariaDB ships with it off, which is why a default install has nothing here.
-  Add `performance_schema = ON` to my.cnf and restart — it cannot be changed
+  Add `performance_schema = ON` to my.cnf and restart; it cannot be changed
   at runtime. It costs some memory and a few percent of throughput.
 
   Until then, `<leader>dl` lists the statements DBClient itself ran.

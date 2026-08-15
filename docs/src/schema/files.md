@@ -37,7 +37,7 @@ database, rather than what the migration file claims it did.
 ## Pruning
 
 Files for objects that no longer exist are removed, so a dropped table
-disappears from the tree. Only files the dump owns are candidates — a
+disappears from the tree. Only files the dump owns are candidates; a
 hand-written file elsewhere is never touched. `:DBClientSchemaDump!` keeps
 stale files.
 

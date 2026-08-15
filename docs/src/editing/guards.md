@@ -20,8 +20,8 @@ update shop.orders set status = 'closed' where customer_id = 7
 ```
 
 The rewrite is parenthesis-depth aware, and it declines rather than guessing
-on a multi-table delete — showing you different rows than the statement would
-touch is worse than showing none.
+on a multi-table delete, because showing you different rows than the statement
+would touch is worse than showing none.
 
 Set `guard.preview_writes_over` to a larger number, or `false` to turn it off.
 

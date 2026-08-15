@@ -18,7 +18,7 @@ faster than typing.
 
 ## Deleting
 
-`dd`, `dap`, a visual selection — any way you delete lines in Vim. Deletes are
+`dd`, `dap`, a visual selection, any way you delete lines in Vim. Deletes are
 keyed by primary key, so what disappears is what you deleted.
 
 ## Importing many rows

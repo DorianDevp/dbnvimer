@@ -19,7 +19,7 @@
 
 | Preset | What it sets |
 |---|---|
-| `csv_strict` | RFC 4180 — the interchange default |
+| `csv_strict` | RFC 4180, the interchange default |
 | `excel` | semicolon, UTF-8 BOM, comma decimal separator |
 | `postgres_copy` | reads back with `\copy` |
 | `mysql_load` | backslash escapes and `\N` |

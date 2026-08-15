@@ -2,7 +2,7 @@
 
 `<leader>de` on a table or a result set, or `ge` inside one.
 
-An editor opens — a buffer of settings, not a dialog.
+An editor opens: a buffer of settings, not a dialog.
 
 ```text
 export  shop.orders → ~/exports/orders.csv
@@ -49,7 +49,7 @@ manifest is the number actually written, not an estimate.
 ## The manifest
 
 A sidecar recording the query, the connection, the row count, the byte count
-and a SHA-256 of each file — so a file that arrives somewhere else can be
+and a SHA-256 of each file, so a file that arrives somewhere else can be
 proved to be the one that left.
 
 ```json

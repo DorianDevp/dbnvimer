@@ -49,5 +49,5 @@ transaction: all of them or none.
 
 ## What was actually run
 
-`<leader>dl` is the statement log for this session — everything DBClient sent,
+`<leader>dl` is the statement log for this session: everything DBClient sent,
 with timings and row counts.

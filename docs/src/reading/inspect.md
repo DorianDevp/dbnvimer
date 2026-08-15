@@ -1,20 +1,16 @@
-# Inspecting a value
+# Inspecting
 
-Three of these are floats: they open over what you are reading and `q` or
-`<Esc>` dismisses them. Nothing is rearranged and nothing is left behind.
+Three floats. `q` or `<Esc>` dismisses them and nothing is rearranged.
 
-## One cell in full
+## `K` a cell in full
 
-`K` opens the cell under the cursor, formatted for what it is: JSON
-pretty-printed, binary as a hex dump with an ASCII gutter, long text wrapped
-rather than truncated.
+JSON pretty-printed, binary as a hex dump with an ASCII gutter, long text
+wrapped rather than truncated.
 
-It is a buffer, so edit it and `:w` writes that one cell — which is how you
+It is a buffer, so edit it and `:w` writes that one cell. That is how you
 change a value too long to sit in the grid.
 
-## One row, readably
-
-`gt` transposes the row under the cursor into a float:
+## `gt` the row, transposed
 
 ```text
 ┌─ main.orders row 1 ────────────────┐
@@ -27,11 +23,7 @@ change a value too long to sit in the grid.
 └────────────────────────────────────┘
 ```
 
-This is the answer to a table with fifty columns.
-
-## One column, statistically
-
-`gs` asks the server about the column rather than about the cell.
+## `gs` the column, statistically
 
 ```text
 orders.status_id                               smallint
@@ -43,9 +35,6 @@ orders.status_id                               smallint
   max             3
 ```
 
-Useful for "is this column actually used", and for finding the column that has
-been `NULL` in every row since 2019.
+Answers "is this column actually used".
 
-## The whole row, with what it relates to
-
-`gK`. That one is not a float — see [The whole record](../relations/record.md).
+`gK` is not a float. See [The whole record](../relations/record.md).

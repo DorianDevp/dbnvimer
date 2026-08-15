@@ -1,7 +1,7 @@
 # Did you mean
 
 ```text
-there is no column `statuz` — did you mean `status`?
+there is no column `statuz`; did you mean `status`?
 ```
 
 The client already knows every table and column on the connection, so a
@@ -20,7 +20,7 @@ than two.
 
 Swapping two adjacent letters is the commonest typo there is. With plain
 Levenshtein it costs two, which puts it outside any threshold tight enough to
-be useful on a short name — so `nmae` would never have found `name`.
+be useful on a short name, so `nmae` would never have found `name`.
 
 ## The threshold
 

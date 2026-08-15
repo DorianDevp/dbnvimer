@@ -7,12 +7,9 @@ select * FORM orders
          ~~~~
 ```
 
-The bar here is not other database clients; it is the compiler you used an
-hour ago.
-
 ## Getting the position
 
-Each backend gives up a different amount, and each is handled.
+Each backend reports a different amount, and each is handled.
 
 | Backend | What it reports | What is done with it |
 |---|---|---|

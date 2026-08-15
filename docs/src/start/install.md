@@ -1,7 +1,5 @@
 # Install
 
-With any plugin manager:
-
 ```lua
 {
   "you/dbclient.nvim",
@@ -11,39 +9,31 @@ With any plugin manager:
 }
 ```
 
-`setup({})` with no arguments is a complete configuration. Everything has a
-default, and connections are found in the project without being told about.
+`setup({})` with no arguments is a complete configuration.
 
 ## The core binary
 
-The database work happens in a Rust daemon rather than in Lua. A binary is
-bundled for Linux, macOS and Windows on x86-64 and aarch64, and the plugin
-picks the right one.
-
-If none matches your platform, build it once:
+A Rust daemon does the database work. Binaries are bundled for Linux, macOS
+and Windows on x86-64 and aarch64. If none matches, build it once:
 
 ```console
 $ cd rust/dbclient-core
 $ cargo build --release
 ```
 
-The plugin looks for a locally built binary first, then the bundled one, then
+The plugin prefers a locally built binary, then the bundled one, then
 `dbclient-core` on `$PATH`.
 
-## Checking it works
+## Check
 
 ```vim
 :checkhealth dbclient
 ```
 
-Six sections: the environment, the core binary it found, whether the
-protocol version matches the plugin, whether the daemon actually starts and
+Six sections: environment, core binary, protocol version, whether the daemon
 answers, every connection with what is wrong with it, and where things are
 stored.
 
-If the daemon ever gets into a strange state, `:DBClientRestart` starts a new
-one. Open connections are closed cleanly first.
+`:DBClientRestart` starts a fresh daemon if one gets stuck.
 
-## Then
-
-Press `<leader>dd`. [Connecting](connecting.md) picks it up from there.
+Then press `<leader>dd`.

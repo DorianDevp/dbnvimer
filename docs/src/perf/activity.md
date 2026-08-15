@@ -8,7 +8,7 @@
 pid    user   state              elapsed  statement
 ────────────────────────────────────────────────────────────────
 1842   app    active               4.2 s  update orders set status_id = …
-1855   app    idle in transaction  92 s   —
+1855   app    idle in transaction  92 s
 1901   app    active               0.1 s  select … from customers …
 ```
 
@@ -36,7 +36,7 @@ The root is what to cancel.
 
 ## Cancelling your own
 
-`<leader>dk`. It cancels on the server, not just in the editor — the daemon
+`<leader>dk`. It cancels on the server, not just in the editor. The daemon
 holds a cancellation handle per session, so the query actually stops.
 
 ## Watching something change

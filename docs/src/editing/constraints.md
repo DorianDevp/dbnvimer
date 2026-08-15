@@ -9,7 +9,7 @@ id  │ label        │ status     │ priority
   1 │ ok           │ dispatched │ 40000
                      ~~~~~~~~~~   ~~~~~
 
-`status` does not accept "dispatched" — one of: new, open, closed
+`status` does not accept "dispatched"; one of: new, open, closed
 40000 is beyond the range of smallint
 ```
 
@@ -45,4 +45,4 @@ explains them.
 ## The trade
 
 A column that declares nothing produces no findings. The better the schema,
-the more this can say — which is the right way round.
+the more this can say, which is the right way round.

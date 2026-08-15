@@ -35,6 +35,6 @@ On a 66-table schema with 97 keys that is about three milliseconds.
 ## Tables that cannot be joined
 
 If no path of declared keys connects them, that is the answer. DBClient does
-not guess at relationships from column names — a schema that has not declared
+not guess at relationships from column names. A schema that has not declared
 its keys has not said what relates to what, and inventing an answer would be
 worse than admitting there is none.

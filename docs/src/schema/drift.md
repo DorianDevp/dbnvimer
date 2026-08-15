@@ -25,11 +25,7 @@ Three kinds of finding, and they mean different things:
 `<CR>` on a finding opens the repository's copy beside the server's in diff
 mode.
 
-## What this is for
+## When to run it
 
-Finding the hotfix nobody wrote down. Someone adds a column on production at
-two in the morning; six weeks later a migration fails for reasons that make no
-sense. This is the check that catches it in between.
-
-Running it after a deployment answers "did the migration actually apply", and
-running it before one answers "is this environment what I think it is".
+After a deployment, to answer "did the migration apply". Before one, to answer
+"is this environment what I think it is".

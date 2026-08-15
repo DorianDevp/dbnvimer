@@ -21,20 +21,15 @@ shop   ACME Corp  →  ACME S.A.
 | `<CR>` | open the matching rows so you can look |
 | `r` | apply it, in one transaction, after one more confirmation |
 
-## Why that last line is there
+## Why the last line is there
 
-The count and the replacement use the same comparison, so the number shown is
-the number that will change.
+`LIKE` on MySQL uses the column's collation, which is case-insensitive by
+default, while `replace()` compares bytes. A search that used `LIKE` would
+promise fifteen changes and make six.
 
-This is not free advice. `LIKE` on MySQL uses the column's collation, which is
-case-insensitive by default, while `replace()` compares bytes. Searching for
-`ACME` with `LIKE` finds rows containing `acme` — and the replacement changes
-none of them. You would be promised fifteen changes and get six, and nothing
-about that looks like a bug at the time.
-
-So the search uses a containment test that performs the same comparison
-`replace()` does, and rows differing only in case are counted separately and
-reported as what they are.
+So the search uses the same comparison `replace()` does, and rows that match
+only when case is ignored are counted separately and reported as such. The
+number shown is the number that will change.
 
 ## No pattern language
 

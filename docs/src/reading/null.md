@@ -28,7 +28,7 @@ string.
 require("dbclient").setup({ ui = { null_display = "∅" } })
 ```
 
-The collision moves with it — with `∅` as the sentinel, `NULL` is an ordinary
+The collision moves with it. With `∅` as the sentinel, `NULL` is an ordinary
 string and needs no escape.
 
 ## In exports

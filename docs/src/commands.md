@@ -1,6 +1,6 @@
 # Commands
 
-Every mapping has one, so nothing is reachable only by keystroke — and a 
+Every mapping has one, so nothing is reachable only by keystroke. A 
 few things have only a command. All 67 of them:
 
 | Command | Does |

@@ -32,13 +32,12 @@ Because the answer depends on the server. The same statement:
 | PostgreSQL 10 | rewrites the table under `ACCESS EXCLUSIVE` |
 | PostgreSQL 11+ | catalogue only |
 
-Getting that backwards is the difference between a deployment nobody notices
-and forty seconds of blocked writes. Row counts come from the same server, so
-"rewrites the table" becomes "rewrites 1.2 million rows".
+Row counts come from the same server, so "rewrites the table" becomes
+"rewrites 1.2 million rows".
 
 ## What it reads
 
-Plain `.sql`, and the frameworks that hide SQL in a string argument — Doctrine,
+Plain `.sql`, and the frameworks that hide SQL in a string argument: Doctrine,
 Alembic, Rails, golang-migrate. It matches on the call that takes the SQL
 rather than on the framework, so a project it has never seen still works.
 
@@ -48,6 +47,6 @@ teaches people to ignore it.
 
 ## What it will not tell you
 
-That a table created earlier in the same migration is empty — it works that
-out and says nothing, because an `ADD CONSTRAINT` on a table that was created
-three statements ago cannot block anything.
+That a table created earlier in the same migration is empty. It works that out
+and says nothing, because an `ADD CONSTRAINT` on a table created three
+statements ago cannot block anything.

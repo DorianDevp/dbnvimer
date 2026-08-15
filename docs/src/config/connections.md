@@ -31,7 +31,7 @@ require("dbclient").setup({
 |---|---|
 | `adapter` | `postgres`, `mariadb` (also MySQL), `sqlite` |
 | `path` | SQLite only, instead of host and port |
-| `access` | `write`, `read`, `sandbox` — see [Access levels](access.md) |
+| `access` | `write`, `read`, `sandbox`. See [Access levels](access.md) |
 | `color` | the winbar and sidebar colour |
 | `ssh` | a tunnel, opened on connect and closed with the session |
 

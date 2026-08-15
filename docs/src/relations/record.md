@@ -38,7 +38,7 @@ after   sidebar 38x38 │ main.orders 34x38 │ record 34x38
 There is no template and no per-table configuration. A table that declares its
 keys gets a record page for free; one that declares none gets a plain row,
 which is the right amount of help for a table that has said nothing. The
-header counts what it found — `2 parents · 0 related tables` above, because in
+header counts what it found: `2 parents · 0 related tables` above, because in
 this schema nothing points at an order.
 
 ## Folds do the work
@@ -48,7 +48,7 @@ Each section is a fold whose first line is its summary.
 | Key | Effect |
 |---|---|
 | `zo` `zc` | open, close |
-| `zM` | close them all — the page becomes an index |
+| `zM` | close them all, so the page becomes an index |
 | `zR` | open them all |
 | `<CR>` | open that table properly, filtered to those rows |
 | `gu` | reveal masked values |
@@ -57,7 +57,7 @@ Each section is a fold whose first line is its summary.
 
 ## Masked columns
 
-Columns named in `ui.mask_columns` — password, token, secret and friends — are
+Columns named in `ui.mask_columns` (password, token, secret and friends) are
 hidden until `gu`. A record page should not spray a hash onto a shared screen.
 
 It is a visible list, not inference: nothing is read from the values, and a
@@ -72,5 +72,5 @@ at it costs one round trip rather than twenty-three; and child rows are only
 fetched for children that have any.
 
 On a real 66-table schema: an order with ten outgoing keys assembles in 21
-queries and 16 milliseconds; the `customers` equivalent — the hub with 23
-things pointing at it — in 10 queries and 9 milliseconds.
+queries and 16 milliseconds; the `customers` equivalent, the hub with 23
+things pointing at it, in 10 queries and 9 milliseconds.

@@ -3,7 +3,7 @@
 `<leader>dI`. Would this index help?
 
 On PostgreSQL with [HypoPG](https://hypopg.readthedocs.io/) installed, the
-index is created hypothetically — it exists only in the planner's imagination,
+index is created hypothetically. It exists only in the planner's imagination,
 costs nothing to make, and is gone when the session ends.
 
 ```text
@@ -32,7 +32,7 @@ this needs the hypopg extension
 
 ## On MySQL and MariaDB
 
-There is no equivalent — the optimiser cannot be told about an index that does
-not exist. The honest answer is to build it on a copy, and
+There is no equivalent, because the optimiser cannot be told about an index
+that does not exist. The honest answer is to build it on a copy, and
 [the audit](../schema/audit.md) will at least tell you which foreign keys have
 no index at all, which is the common case.

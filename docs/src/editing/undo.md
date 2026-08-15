@@ -26,8 +26,8 @@ be read, checked and run like anything else.
 
 This is not database undo and does not pretend to be. It covers writes
 DBClient itself made through the data buffer, where the previous values are
-known — which is enough for "what did I just set that to", at an hour when
-reading a binlog is not appealing.
+known. Enough for "what did I just set that to" at an hour when reading a
+binlog is not appealing.
 
 A statement you typed and ran yourself is in the [statement
 log](../sql/buffer.md), not here.

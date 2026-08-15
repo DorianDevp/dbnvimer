@@ -22,7 +22,7 @@ you were looking at, not just which table it was in.
 
 ## It behaves like the jumplist
 
-Navigating from a rewound position drops the forward branch — the same rule
+Navigating from a rewound position drops the forward branch, the same rule
 `<C-o>` and `<C-i>` follow. Nothing surprising happens if you go back two
 steps and then follow a different key.
 

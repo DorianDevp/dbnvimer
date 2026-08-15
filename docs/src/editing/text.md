@@ -17,8 +17,8 @@ Not its position. Each row carries an extmark, and the change set is
 reconciled against the primary key: the key decides which buffer line is
 which snapshot row, and marks only fill in for rows whose key you edited.
 
-That is why a line-wise edit — `:m`, a block paste, deleting three rows and
-retyping them — still writes to the rows you meant.
+That is why a line-wise edit (`:m`, a block paste, deleting three rows and
+retyping them) still writes to the rows you meant.
 
 ## What cannot be edited in place
 

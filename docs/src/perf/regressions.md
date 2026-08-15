@@ -16,7 +16,7 @@ Someone dropped an index.
 ## The arithmetic is the whole feature
 
 Both sources report totals since the server started. Their published average
-is therefore the average over the process's entire life — which on a server
+is therefore the average over the process's entire life, which on a server
 that has been up for a month says nothing about this week.
 
 What matters is the average over the *window* between two readings:
@@ -36,7 +36,7 @@ as having got faster. So it reports nothing for those.
 
 ## What is filtered out
 
-- statements called fewer than five times in the window — one slow call is
+- statements called fewer than five times in the window; one slow call is
   noise, not a regression
 - changes smaller than 1.5× in either direction
 

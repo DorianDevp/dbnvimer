@@ -29,6 +29,6 @@ that node is marked:
 └─ Nested Loop  (rows=12 actual=48 210)     ← estimate off by 4000×
 ```
 
-That mark is usually the actual answer. A planner that thinks a step returns
-twelve rows will choose a plan that is catastrophic for forty-eight thousand,
-and the fix is nearly always statistics rather than the query.
+That mark is usually the answer. A planner that expects twelve rows picks a
+plan that is catastrophic for forty-eight thousand, and the fix is nearly
+always statistics rather than the query.

@@ -14,9 +14,8 @@ could not connect to `staging`
         `select user, host from mysql.user`, or `pg_hba.conf` on PostgreSQL.
 ```
 
-Each layer is tested in order and the first one that fails is named — and only
-that one, because once a hostname does not resolve nothing true can be said
-about the port.
+Layers are tested in order and only the first failure is named, because once a
+hostname does not resolve, nothing true can be said about the port.
 
 ## The layers
 
@@ -35,7 +34,7 @@ firewall. Conflating them is why this normally takes twenty minutes.
 ## For SQLite
 
 A file, not a socket. It checks the path is readable, and notes that a missing
-file is only a problem for a read-only connection — SQLite creates the
+file is only a problem for a read-only connection, since SQLite creates the
 database on first write.
 
 ## Cost

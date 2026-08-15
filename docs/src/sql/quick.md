@@ -23,5 +23,5 @@ the tab.
 `gc` is the one worth remembering: the same statement against staging and
 production without retyping it or switching connections.
 
-For anything you will keep, use [the query buffer](buffer.md) instead — it
-sits beside your data rather than taking over the screen.
+For anything you will keep, use [the query buffer](buffer.md) instead. It sits
+beside your data rather than taking over the screen.

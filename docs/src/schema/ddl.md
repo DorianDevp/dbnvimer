@@ -33,6 +33,6 @@ there.
 
 ## Comparing two schemas
 
-`:DBClientSchemaDiff` compares the same object across two connections — dev
-against production — as a diff rather than a report. The same view answers
-"what did that migration actually change".
+`:DBClientSchemaDiff` compares the same object across two connections, dev
+against production, as a diff rather than a report. It also answers "what did
+that migration actually change".

@@ -163,29 +163,71 @@ local function update(path, transform)
   return true
 end
 
---- The book's key reference: one table per group, on its own page.
-local function book_keys()
-  local lines = {
-    "# Key reference",
-    "",
-    "Generated from the same table that registers the mappings, so it cannot",
-    "disagree with what is actually bound. `g?` in any DBClient buffer shows",
-    "that buffer's keys; `:DBClientHelp` shows every group at once.",
-    "",
-  }
+--- Which chapter each mapping group belongs on, and what to call it there.
+---
+--- Keys are the first thing a reader wants and the thing they come back for,
+--- so they get a chapter of their own near the front, one page per context.
+--- Grouped rather than one per mapping group, because "the plan buffer" and
+--- "the activity monitor" are not contexts anyone thinks in.
+local KEY_PAGES = {
+  {
+    slug = "anywhere",
+    where = "any buffer, under the leader prefix",
+    title = "Anywhere",
+    blurb = "Prefixed with `g:dbclient_leader`, `<leader>d` by default. These work in any buffer.",
+    groups = { "global" },
+  },
+  {
+    slug = "sidebar",
+    where = "the object tree",
+    title = "Sidebar",
+    blurb = "The object tree.",
+    groups = { "sidebar" },
+  },
+  {
+    slug = "table",
+    where = "a table's data",
+    title = "Table view",
+    blurb = "The data buffer. It is editable, so only navigation and inspection are mapped; nothing shadows an editing key.",
+    groups = { "data", "textobj" },
+  },
+  {
+    slug = "sql",
+    where = "the query buffer, the quick-query tab, saved queries",
+    title = "SQL buffers",
+    blurb = "The query buffer, the quick-query tab, and the saved-query browser.",
+    groups = { "query", "scratch", "queries" },
+  },
+  {
+    slug = "results",
+    where = "a result set, or a record page",
+    title = "Results and records",
+    blurb = "What a query returned, and what a row is connected to.",
+    groups = { "result", "record" },
+  },
+  {
+    slug = "panels",
+    where = "plans, activity, DDL, export, connections",
+    title = "Other panels",
+    blurb = "Everything that opens to tell you something.",
+    groups = { "explain", "activity", "statements", "ddl", "export", "connections" },
+  },
+}
 
-  for _, group in ipairs(keymap.order) do
+--- One page of key tables.
+---@param page table
+---@return string[]
+local function key_page(page)
+  local lines = { "# " .. page.title, "", page.blurb, "" }
+
+  for _, group in ipairs(page.groups) do
     local spec = keymap.groups[group]
     if spec then
-      table.insert(lines, "## " .. spec.title)
-      table.insert(lines, "")
-      if spec.description then
-        for _, paragraph in ipairs(vim.split(vim.trim(spec.description), "\n\n")) do
-          table.insert(lines, (paragraph:gsub("\n", " ")))
-          table.insert(lines, "")
-        end
+      if #page.groups > 1 then
+        table.insert(lines, "## " .. spec.title)
+        table.insert(lines, "")
       end
-      table.insert(lines, "| Key | Effect |")
+      table.insert(lines, "| Key | Does |")
       table.insert(lines, "|---|---|")
       for _, entry in ipairs(spec.keys or {}) do
         -- A literal pipe would end the table cell.
@@ -199,10 +241,53 @@ local function book_keys()
   return lines
 end
 
+--- The chapter's front page: which context is which.
+local function key_index()
+  local lines = {
+    "# Keybindings",
+    "",
+    "Keys differ by context. `g?` in any DBClient buffer lists that buffer's.",
+    "",
+    "| Page | Where you are |",
+    "|---|---|",
+  }
+  for _, page in ipairs(KEY_PAGES) do
+    table.insert(lines, ("| [%s](%s.md) | %s |"):format(page.title, page.slug, page.where))
+  end
+  vim.list_extend(lines, {
+    "",
+    "## The ones to learn first",
+    "",
+    "| Key | Does |",
+    "|---|---|",
+    "| `<leader>dd` | open the sidebar |",
+    "| `<CR>` | connect, expand, or open, whichever the node under the cursor needs |",
+    "| `g?` | the keys for this buffer |",
+    "| `q` | close this panel |",
+    "| `:w` | commit your edits |",
+    "| `<leader>d!` | explain the last error |",
+    "",
+    "## Changing the prefix",
+    "",
+    "Global mappings sit under `g:dbclient_leader`, `<leader>d` by default. Set it",
+    "before `setup()` and everything follows, including `g?` and this chapter.",
+    "",
+    "```lua",
+    'vim.g.dbclient_leader = "<leader>b"',
+    'require("dbclient").setup({})',
+    "```",
+    "",
+    "Every mapping also has a command behind it, so nothing is reachable only by",
+    "keystroke. See [Commands](../commands.md).",
+    "",
+  })
+  return lines
+end
+
 --- What each command is for.
 ---
 --- Hand written, because a command's purpose is not derivable from the fact
---- that it exists — but checked against the commands actually registered, so
+--- that it exists, but checked against the commands actually registered, so
 --- a new one cannot go undocumented and a removed one cannot linger.
 local COMMAND_NOTES = {
   DBClient = "open the sidebar",
@@ -324,7 +409,7 @@ local function book_commands()
   local lines = {
     "# Commands",
     "",
-    ("Every mapping has one, so nothing is reachable only by keystroke — and a "),
+    ("Every mapping has one, so nothing is reachable only by keystroke. A "),
     ("few things have only a command. All %d of them:"):format(#registered),
     "",
     "| Command | Does |",
@@ -343,9 +428,15 @@ ok = update("README.md", function(lines)
   return splice(lines, START, STOP, vim.list_extend({ "" }, markdown()))
 end) and ok
 
-ok = update("docs/src/keys.md", function()
-  return book_keys()
+ok = update("docs/src/keys/index.md", function()
+  return key_index()
 end) and ok
+
+for _, page in ipairs(KEY_PAGES) do
+  ok = update(("docs/src/keys/%s.md"):format(page.slug), function()
+    return key_page(page)
+  end) and ok
+end
 
 ok = update("docs/src/commands.md", function()
   return book_commands()

@@ -21,7 +21,7 @@ real name and type errors before you run anything.
 ```sql
 select customer_nmae from orders
        ~~~~~~~~~~~~~
--- there is no column `customer_nmae` — did you mean `customer_name`?
+-- there is no column `customer_nmae`; did you mean `customer_name`?
 ```
 
 This is why a misspelled column surfaces while you type rather than when you

@@ -11,7 +11,7 @@ syntax error
 
   the server could not parse this
   Parsing stopped at the marked position, so the mistake is at or just
-  before it — a missing comma, an unclosed quote or bracket, or a keyword
+  before it: a missing comma, an unclosed quote or bracket, or a keyword
   the server does not have.
 ```
 
