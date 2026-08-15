@@ -86,39 +86,87 @@ end
 ---@param bufnr integer
 ---@param command string  window command, e.g. `botright 14split`
 ---@return integer winid
---- A window holding an empty, unnamed, untouched buffer.
+--- Panels that report on something else, and so must not be taken over.
 ---
---- The window Neovim starts with, in other words. Splitting away from it and
---- leaving it there costs a third of the screen to show nothing, and squashes
---- everything else to make room.
+--- A result set sits under the query that produced it and an error under the
+--- statement that caused it. Opening a table into one of those would replace
+--- the thing you are reading with the thing you asked about.
+local PANELS = {
+  ["dbclient"] = true, -- the sidebar
+  ["dbclient-result"] = true,
+  ["dbclient-error"] = true,
+  ["dbclient-diagnosis"] = true,
+  ["dbclient-help"] = true,
+  ["dbclient-palette"] = true,
+  ["dbclient-transpose"] = true,
+  ["dbclient-stats"] = true,
+  ["dbclient-chart"] = true,
+  ["dbclient-blast"] = true,
+  ["dbclient-changes"] = true,
+}
+
+--- Whether a window is somewhere content can be put.
+---@param win integer
+---@return boolean
+local function is_content_window(win)
+  if vim.api.nvim_win_get_config(win).relative ~= "" then
+    return false
+  end
+  local bufnr = vim.api.nvim_win_get_buf(win)
+  if PANELS[vim.bo[bufnr].filetype] then
+    return false
+  end
+  return vim.bo[bufnr].buftype == "" or vim.bo[bufnr].buftype == "nofile"
+end
+
+--- Where content the user asked to look at should go.
+---
+--- Splitting instead is what made this unusable: with a file open and the
+--- sidebar out, a table arrived as a full-width strip along the bottom and
+--- halved everything else — and a second table halved it again, leaving two
+--- nine-line grids. A data buffer is the thing you came to read, so it gets
+--- the main area, and the next one replaces it rather than stacking.
+---
+--- The buffer that was there is not lost: it stays in the buffer list, and
+--- `<C-o>` or `:b#` brings it straight back.
 ---@return integer|nil
-local function scratch_window()
-  for _, win in ipairs(vim.api.nvim_list_wins()) do
-    if vim.api.nvim_win_get_config(win).relative == "" then
-      local bufnr = vim.api.nvim_win_get_buf(win)
-      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, 2, false)
-      if
-        vim.api.nvim_buf_get_name(bufnr) == ""
-        and vim.bo[bufnr].buftype == ""
-        and not vim.bo[bufnr].modified
-        and #lines <= 1
-        and (lines[1] or "") == ""
-      then
-        return win
+local function primary_window()
+  local windows = vim.api.nvim_list_wins()
+
+  -- A window already showing content of this kind is the obvious home, so
+  -- opening one table after another reuses one window instead of tiling.
+  for _, win in ipairs(windows) do
+    local filetype = vim.bo[vim.api.nvim_win_get_buf(win)].filetype
+    if filetype == "dbclient-data" or filetype == "dbclient-record" then
+      return win
+    end
+  end
+
+  local current = vim.api.nvim_get_current_win()
+  if is_content_window(current) then
+    return current
+  end
+
+  local best, best_area
+  for _, win in ipairs(windows) do
+    if is_content_window(win) then
+      local area = vim.api.nvim_win_get_width(win) * vim.api.nvim_win_get_height(win)
+      if not best or area > best_area then
+        best, best_area = win, area
       end
     end
   end
+  return best
 end
 
 --- Put a buffer on screen.
 ---
---- `opts.reuse_empty` takes over the startup window when there is one, rather
---- than splitting away from it. Content the user asked to look at should land
---- where they are looking; a result panel, which belongs *under* something,
---- should not.
+--- `opts.primary` marks content the user asked to look at — a table, a record.
+--- It lands in the main area. Everything else keeps whatever split its caller
+--- asked for, because a panel that belongs under something has to stay there.
 ---@param bufnr integer
 ---@param command string
----@param opts? { reuse_empty?: boolean }
+---@param opts? { primary?: boolean }
 ---@return integer winid
 function M.show(bufnr, command, opts)
   local existing = M.windows(bufnr)[1]
@@ -127,12 +175,12 @@ function M.show(bufnr, command, opts)
     return existing
   end
 
-  if opts and opts.reuse_empty then
-    local empty = scratch_window()
-    if empty then
-      vim.api.nvim_set_current_win(empty)
-      vim.api.nvim_win_set_buf(empty, bufnr)
-      return empty
+  if opts and opts.primary then
+    local target = primary_window()
+    if target then
+      vim.api.nvim_set_current_win(target)
+      vim.api.nvim_win_set_buf(target, bufnr)
+      return target
     end
   end
 

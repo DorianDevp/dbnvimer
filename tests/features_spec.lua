@@ -438,3 +438,85 @@ t.describe("charts", {
     )
   end,
 })
+
+local buffer = require("dbclient.ui.buffer")
+
+t.describe("where content lands", {
+  ["takes the window you were in rather than splitting away from it"] = function()
+    -- With a file open and the sidebar out, a table used to arrive as a
+    -- full-width strip along the bottom and halve everything else.
+    vim.cmd("silent! only")
+    local file = vim.api.nvim_get_current_buf()
+    vim.api.nvim_buf_set_lines(file, 0, -1, false, { "local x = 1" })
+
+    local data = vim.api.nvim_create_buf(false, true)
+    vim.bo[data].filetype = "dbclient-data"
+    local before = #vim.api.nvim_list_wins()
+
+    buffer.show(data, "botright split", { primary = true })
+    t.eq(#vim.api.nvim_list_wins(), before, "no new window was made")
+    t.eq(vim.api.nvim_win_get_buf(0), data, "the content is in front of you")
+
+    vim.api.nvim_buf_delete(data, { force = true })
+  end,
+
+  ["reuses the same window for the next thing of the same kind"] = function()
+    vim.cmd("silent! only")
+    local first = vim.api.nvim_create_buf(false, true)
+    vim.bo[first].filetype = "dbclient-data"
+    buffer.show(first, "botright split", { primary = true })
+
+    local second = vim.api.nvim_create_buf(false, true)
+    vim.bo[second].filetype = "dbclient-data"
+    local before = #vim.api.nvim_list_wins()
+    buffer.show(second, "botright split", { primary = true })
+
+    -- Opening one table after another should not tile the screen; going back
+    -- is the trail's job.
+    t.eq(#vim.api.nvim_list_wins(), before, "the second table replaced the first")
+    t.eq(vim.api.nvim_win_get_buf(0), second)
+
+    vim.api.nvim_buf_delete(first, { force = true })
+    vim.api.nvim_buf_delete(second, { force = true })
+  end,
+
+  ["never takes over a panel that reports on something else"] = function()
+    vim.cmd("silent! only")
+    -- Standing in a result panel and opening a table must not replace the
+    -- result with the table you asked about.
+    local result = vim.api.nvim_create_buf(false, true)
+    vim.bo[result].filetype = "dbclient-result"
+    vim.api.nvim_win_set_buf(0, result)
+
+    local data = vim.api.nvim_create_buf(false, true)
+    vim.bo[data].filetype = "dbclient-data"
+    buffer.show(data, "botright split", { primary = true })
+
+    t.ok(vim.api.nvim_win_get_buf(0) == data, "the table is in front of you")
+    local still_there = false
+    for _, win in ipairs(vim.api.nvim_list_wins()) do
+      if vim.api.nvim_win_get_buf(win) == result then
+        still_there = true
+      end
+    end
+    t.ok(still_there, "and the result panel survived")
+
+    vim.api.nvim_buf_delete(result, { force = true })
+    vim.api.nvim_buf_delete(data, { force = true })
+    vim.cmd("silent! only")
+  end,
+
+  ["leaves a panel where its caller put it"] = function()
+    vim.cmd("silent! only")
+    local before = #vim.api.nvim_list_wins()
+    local panel = vim.api.nvim_create_buf(false, true)
+    vim.bo[panel].filetype = "dbclient-result"
+
+    -- No `primary`, so it splits: a result belongs *under* its query.
+    buffer.show(panel, "botright 14split")
+    t.eq(#vim.api.nvim_list_wins(), before + 1)
+
+    vim.api.nvim_buf_delete(panel, { force = true })
+    vim.cmd("silent! only")
+  end,
+})

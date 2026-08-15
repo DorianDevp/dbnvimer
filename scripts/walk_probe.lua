@@ -57,20 +57,31 @@ local function rule(title)
 end
 
 --- Which windows exist, how big, and which one has the cursor.
+---
+--- Floats are marked, because "it opened a window" and "it opened a float you
+--- dismiss with `q`" are different things to a reader.
 local function layout()
-  local parts = {}
+  local splits, floats = {}, {}
   for _, win in ipairs(vim.api.nvim_list_wins()) do
     local bufnr = vim.api.nvim_win_get_buf(win)
     local name = vim.api.nvim_buf_get_name(bufnr)
     name = name ~= "" and vim.fn.fnamemodify(name, ":t") or "[no name]"
-    table.insert(parts, ("%s %dx%d%s"):format(
+    local entry = ("%s %dx%d%s"):format(
       name,
       vim.api.nvim_win_get_width(win),
       vim.api.nvim_win_get_height(win),
       win == vim.api.nvim_get_current_win() and " ←" or ""
-    ))
+    )
+    if vim.api.nvim_win_get_config(win).relative ~= "" then
+      table.insert(floats, entry)
+    else
+      table.insert(splits, entry)
+    end
   end
-  print("   windows: " .. table.concat(parts, " │ "))
+  print("   windows: " .. table.concat(splits, " │ "))
+  if #floats > 0 then
+    print("   floats:  " .. table.concat(floats, " │ "))
+  end
 end
 
 --- Print a buffer exactly as it is.
@@ -238,6 +249,7 @@ vim.wait(600, function()
 end, 50)
 layout()
 show(vim.api.nvim_get_current_buf(), 20)
+vim.api.nvim_feedkeys("q", "x", false)
 
 rule("`g?` — the help for this buffer")
 vim.api.nvim_set_current_buf(view.bufnr)

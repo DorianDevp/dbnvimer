@@ -1,64 +1,81 @@
 # Where things open
 
-Opening the sidebar gives you two windows: the sidebar, and whatever you were
-already in.
+## A table takes the main window
+
+Whatever you were editing, opening a table replaces it in that window. The
+file is not lost — it stays in the buffer list, and `<C-o>` or `:b#` brings it
+straight back.
 
 ```text
-sidebar 38 │ [no name] 69
+editing app.lua        app.lua 120x38
+opened a table         main.orders 120x38
 ```
 
-Opening a table takes over that second window rather than splitting away from
-it, the way a file explorer does.
+With the sidebar out, the sidebar keeps its full height and the table takes
+the rest:
 
 ```text
-sidebar 38 │ main.orders 69
+sidebar open           sidebar 38x38 │ app.lua 81x38
+opened a table         sidebar 38x38 │ main.orders 81x38
+opened a second table  sidebar 38x38 │ main.customers 81x38
 ```
 
-## The three places
+The second table *replaces* the first rather than splitting again. Getting
+back to it is [the trail](../relations/trail.md), not window management.
+
+With several files open it takes the largest one and leaves the rest alone:
 
 ```text
-┌─────────────┬──────────────────────────────────────────────┐
-│             │                                              │
-│  sidebar    │   data, query buffers, records, plans        │
-│  38 cols    │   the window you started in                  │
-│  fixed      │                                              │
-│             ├──────────────────────────────────────────────┤
-│             │   results, errors, reports                   │
-│             │   14 lines at the bottom                     │
-└─────────────┴──────────────────────────────────────────────┘
+two files + sidebar    sidebar 38x38 │ app.lua 21x38 │ app.lua 59x38
+opened a table         sidebar 38x38 │ app.lua 21x38 │ main.orders 59x38
 ```
 
-Content you asked to look at takes over the window you are in. Panels that
-belong *under* something — a result set beneath its query — open at the
-bottom. A second thing you asked to look at, like a record view or a query
-buffer, splits beside the first, because you usually want both.
+## Three kinds of window
 
-## Windows accumulate
+**The main area** is for content you asked to look at: a table, a query
+buffer, a record, a plan.
 
-They do not close themselves. Open a table, transpose a row, look at the
-record and run a query and you have five windows:
+**The bottom strip** is for panels that report on something else — a result
+set under the query that produced it, an error under the statement that caused
+it. Fourteen lines by default, `ui.result_height`.
+
+**Floats** are for a quick look that you dismiss: `gt` for a transposed row,
+`g?` for this buffer's keys, `K` for a value in full.
 
 ```text
-sidebar 38 │ main.orders 22 │ query.sql 23 │ record 22 │ transposed 36
-─────────────────────────────────────────────────────────────────────
-results 108
+splits   sidebar 38x38 │ main.orders 69x38
+floats   transposed row 36x6
 ```
 
-That is not a bug so much as a consequence of nothing being modal — but it
-means `q` is worth learning early.
+`q` closes a float and `<Esc>` does too, so they never accumulate.
+
+## What does split
+
+Asking for a second thing while looking at the first splits, because you
+usually want both:
+
+```text
+opened a table         sidebar 38x38 │ main.orders 69x38
+gK, the record         sidebar 38x38 │ main.orders 34x38 │ record 34x38
+a query buffer         sidebar 38x38 │ orders 22 │ query.sql 23 │ record 22
+ran the query          … and results 108x14 along the bottom
+```
+
+Five windows is a lot, and nothing closes itself, so `q` is worth learning
+early.
 
 | Key | Effect |
 |---|---|
-| `q` | close the DBClient panel you are in |
+| `q` | close the DBClient panel or float you are in |
 | `<C-w>o` | keep only the current window |
 | `<C-w>h` `<C-w>l` | move left and right |
 | `<C-w>w` | cycle |
 | `<leader>dd` | toggle the sidebar |
 
-`q` is bound in every DBClient panel — results, plans, records, errors, the
-export editor, the connection manager, and the quick-query tab. It is *not*
-bound in the data buffer or in a query buffer, because those are editable and
-`q` starts a macro there. Close those with `:q` like any other buffer.
+`q` is bound in every panel and float — results, plans, records, errors, the
+export editor, the connection manager, the quick-query tab. It is *not* bound
+in the data buffer or in a query buffer, because those are editable and `q`
+starts a macro there. Close those with `:q`, or just open something else.
 
 ## The sidebar keeps its width
 

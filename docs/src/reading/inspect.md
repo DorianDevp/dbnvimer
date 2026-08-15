@@ -1,29 +1,33 @@
 # Inspecting a value
 
+Three of these are floats: they open over what you are reading and `q` or
+`<Esc>` dismisses them. Nothing is rearranged and nothing is left behind.
+
 ## One cell in full
 
 `K` opens the cell under the cursor, formatted for what it is: JSON
 pretty-printed, binary as a hex dump with an ASCII gutter, long text wrapped
 rather than truncated.
 
-The inspector is a buffer. Edit it and `:w` writes that one cell — which is
-how you change a value too long to sit in the grid.
+It is a buffer, so edit it and `:w` writes that one cell — which is how you
+change a value too long to sit in the grid.
 
 ## One row, readably
 
-`gt` transposes the row under the cursor into a small window of its own:
+`gt` transposes the row under the cursor into a float:
 
 ```text
-id           1042
-reference    SO-2026-1042
-customer_id  7
-status_id    1
-created_at   2026-03-01 09:14:00
-note         NULL
+┌─ main.orders row 1 ────────────────┐
+│ id           1042                  │
+│ reference    SO-2026-1042          │
+│ customer_id  7                     │
+│ status_id    1                     │
+│ created_at   2026-03-01 09:14:00   │
+│ note         NULL                  │
+└────────────────────────────────────┘
 ```
 
-This is the answer to a table with fifty columns. It opens beside the data
-rather than replacing it, so `q` closes it and you are back.
+This is the answer to a table with fifty columns.
 
 ## One column, statistically
 
@@ -42,9 +46,6 @@ orders.status_id                               smallint
 Useful for "is this column actually used", and for finding the column that has
 been `NULL` in every row since 2019.
 
-## Windows pile up
+## The whole row, with what it relates to
 
-`gt`, `gK` and the panels all open beside what you were looking at rather than
-replacing it, because you usually want both. They do not close themselves:
-`q` closes the one you are in, and `<C-w>o` keeps only the current window when
-it has got out of hand.
+`gK`. That one is not a float — see [The whole record](../relations/record.md).

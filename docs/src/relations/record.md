@@ -26,7 +26,14 @@ main.orders   #1042  SO-2026-1042
 The row, the row behind every foreign key it holds, and a sample of everything
 pointing back at it. One buffer, one keystroke.
 
-It opens beside the data rather than replacing it, so you can read both.
+It splits beside the data rather than replacing it, so you can read both:
+
+```text
+before  sidebar 38x38 │ main.orders 69x38
+after   sidebar 38x38 │ main.orders 34x38 │ record 34x38
+```
+
+`q` closes it and the data buffer gets its width back.
 
 There is no template and no per-table configuration. A table that declares its
 keys gets a record page for free; one that declares none gets a plain row,
