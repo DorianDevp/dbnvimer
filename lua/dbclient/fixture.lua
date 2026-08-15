@@ -217,7 +217,13 @@ function M.render(opts)
   local collected = opts.collected
   local lines = {
     ("-- @conn: %s"):format(opts.connection or ""),
-    ("-- fixture: %d row(s) across %d table(s)"):format(collected.count, #collected.order),
+    -- Both lists, because a table caught in a cycle is still a table that was
+    -- pulled: counting only the ordered ones reported a fixture of two tables
+    -- as "2 rows across 0 tables".
+    ("-- fixture: %d row(s) across %d table(s)"):format(
+      collected.count,
+      #collected.order + #collected.cyclic
+    ),
     "-- Parents first, so the foreign keys are satisfiable in this order.",
     "",
   }

@@ -460,29 +460,50 @@ t.describe("replace SQL generation", {
     t.eq(replace.quote_literal("a\\b", "postgres"), "'a\\b'")
   end,
 
-  ["never puts a backslash in the escape clause"] = function()
-    -- `escape '\\'` is an unterminated string on MySQL, which turned every
-    -- table in a 286-table schema into a syntax error.
-    local _, clause = replace.like_pattern("anything")
-    t.falsy(clause:find("\\", 1, true), "the escape clause is backslash free: " .. clause)
-
-    local sql = replace.count_sql(
-      { table = "t", columns = { "c" } },
-      "ACME",
-      "mysql",
-      "s"
-    )
-    t.falsy(sql:find("\\", 1, true), "and so is the generated query")
+  ["needs no escape clause at all"] = function()
+    -- `escape '\\'` is an unterminated string on MySQL, which once turned
+    -- every table in a 286-table schema into a syntax error. Dropping LIKE
+    -- removed the escape character and the problem with it.
+    local sql = replace.count_sql({ table = "t", columns = { "c" } }, "ACME", "mysql", "s")
+    t.falsy(sql:find("escape", 1, true), "no escape clause")
+    t.falsy(sql:find("\\", 1, true), "and no backslash to be misread")
   end,
 
-  ["defangs LIKE wildcards in the needle"] = function()
-    -- Searching for "100%" must not match every row.
-    t.eq((replace.like_pattern("100%")), "%100!%%")
-    t.eq((replace.like_pattern("a_b")), "%a!_b%")
-    t.eq((replace.like_pattern("plain")), "%plain%")
-    -- The escape character has to escape itself, or a needle containing one
-    -- silently eats the next character.
-    t.eq((replace.like_pattern("wow!")), "%wow!!%")
+  ["matches containment without a pattern language"] = function()
+    -- No LIKE, so a needle full of wildcards is just text: `100%` is three
+    -- characters, not "anything at all".
+    for _, needle in ipairs({ "100%", "a_b", "wow!", "plain" }) do
+      local predicate = replace.match_predicate("`c`", needle, "mysql")
+      t.matches(predicate, "^instr%(", needle .. " is a containment test")
+      t.falsy(predicate:find("like", 1, true), needle .. " uses no LIKE")
+      t.matches(predicate, vim.pesc(needle), needle .. " appears verbatim")
+    end
+  end,
+
+  ["compares case exactly, the way replace does"] = function()
+    -- MySQL applies the column's collation to LIKE and to instr, and the
+    -- default collation ignores case — while `replace()` compares bytes. A
+    -- search that disagrees with the replacement counts rows it cannot change:
+    -- nine `…@demo.ventia.pl` addresses were reported as matching `Ventia`.
+    t.matches(
+      replace.match_predicate("`email`", "Ventia", "mysql"),
+      "cast%('Ventia' as binary%)"
+    )
+    -- PostgreSQL and SQLite already compare bytes in both.
+    t.matches(replace.match_predicate('"email"', "Ventia", "postgres"), "^strpos%(")
+    t.matches(replace.match_predicate('"email"', "Ventia", "sqlite"), "^instr%(")
+    for _, dialect in ipairs({ "postgres", "sqlite" }) do
+      t.falsy(
+        replace.match_predicate('"c"', "x", dialect):find("binary", 1, true),
+        dialect .. " needs no cast"
+      )
+    end
+  end,
+
+  ["offers a case-insensitive count without acting on it"] = function()
+    local loose = replace.loose_predicate("`email`", "Ventia", "mysql")
+    t.matches(loose, "lower%(`email`%)")
+    t.matches(loose, "'ventia'")
   end,
 
   ["counts every text column in one query"] = function()
@@ -493,8 +514,8 @@ t.describe("replace SQL generation", {
       "shop"
     )
     t.matches(sql, "^select ")
-    t.matches(sql, "`company` like '%%ACME%%' escape '!'")
-    t.matches(sql, "`note` like '%%ACME%%' escape '!'")
+    t.matches(sql, "instr%(`company`, cast%('ACME' as binary%)%)")
+    t.matches(sql, "instr%(`note`, cast%('ACME' as binary%)%)")
     t.matches(sql, "from `shop`%.`customer`$")
     t.eq(select(2, sql:gsub("from", "")), 1, "one query, not one per column")
   end,
@@ -509,8 +530,10 @@ t.describe("replace SQL generation", {
     t.matches(sql, "^update `shop`%.`customer` set `company` = replace%(")
     t.matches(sql, "'ACME Corp'")
     t.matches(sql, "'ACME S%.A%.'")
-    -- Without the WHERE, replace() would touch every row in the table.
-    t.matches(sql, "where `company` like '%%ACME Corp%%'")
+    -- Without the WHERE, replace() would touch every row in the table. The
+    -- test has to be the same one the count used, or the report and the write
+    -- disagree about how many rows there are.
+    t.matches(sql, "where instr%(`company`, cast%('ACME Corp' as binary%)%) > 0")
   end,
 
   ["carries an apostrophe through both halves"] = function()
@@ -536,6 +559,7 @@ t.describe("the replace report", {
       total = 16,
       searched = 286,
       skipped = {},
+      ignoring_case = 0,
     }, { needle = "ACME Corp", replacement = "ACME S.A.", schema = "shop" })
 
     local text = table.concat(lines, "\n")
@@ -766,3 +790,35 @@ t.describe("dumping and drift", (function()
     end },
   }
 end)())
+
+t.describe("the case-insensitive footnote", {
+  ["is reported but never acted on"] = function()
+    local lines = replace.render({
+      hits = { { table = "user", column = "email", count = 2, ignoring_case = 11 } },
+      total = 2,
+      searched = 51,
+      skipped = {},
+      ignoring_case = 9,
+    }, { needle = "Ventia", replacement = "Ventia S.A.", schema = "serwis" })
+
+    local text = table.concat(lines, "\n")
+    t.matches(text, "2 rows across 1 columns")
+    -- The number that matters: nine rows a naive LIKE would have promised and
+    -- `replace()` would have left alone.
+    t.matches(text, "9 more row%(s%) match if case is ignored, and would not be changed")
+  end,
+
+  ["says nothing when there is no gap"] = function()
+    local text = table.concat(
+      replace.render({
+        hits = { { table = "t", column = "c", count = 1, ignoring_case = 1 } },
+        total = 1,
+        searched = 1,
+        skipped = {},
+        ignoring_case = 0,
+      }, { needle = "x", schema = "s" }),
+      "\n"
+    )
+    t.falsy(text:find("case is ignored", 1, true))
+  end,
+})

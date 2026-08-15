@@ -71,15 +71,6 @@ function M.quote_ident(name, dialect)
   return '"' .. name:gsub('"', '""') .. '"'
 end
 
---- The LIKE escape character.
----
---- Deliberately not a backslash. MySQL and MariaDB treat a backslash inside a
---- string literal as an escape character, so the obvious `escape '\\'` is an
---- unterminated string and every one of 286 tables came back a syntax error.
---- `!` needs no escaping in any dialect's string literals, and the needle's own
---- exclamation marks are escaped along with the wildcards.
-local ESCAPE = "!"
-
 --- Quote a string literal.
 ---
 --- Doubling the quote is the one escape every dialect agrees on. Backslash is
@@ -97,16 +88,52 @@ function M.quote_literal(text, dialect)
   return "'" .. out .. "'"
 end
 
---- A LIKE pattern matching `needle` anywhere, with its wildcards defanged.
+--- A test for `needle` occurring anywhere in `column`, matching case exactly.
 ---
---- Without this, searching for `100%` matches every row: the `%` is a wildcard,
---- not a character. The escape clause is stated explicitly because the default
---- differs between servers.
+--- Not `LIKE`, for two reasons that only a real server makes obvious.
+---
+--- The first is that `LIKE` on MySQL uses the column's collation, which is
+--- case-insensitive by default, while `replace()` compares bytes. Searching a
+--- table of `…@demo.ventia.pl` addresses for `Ventia` reported nine rows and
+--- would have changed none of them: the count promised work the replacement
+--- could not do. A containment test that agrees with `replace()` is the only
+--- honest thing to count.
+---
+--- The second is that `LIKE` has wildcards, so the needle needs escaping, which
+--- needs an escape character, which MySQL then reads inside the string literal.
+--- `instr` has no pattern language and therefore none of that.
+---@param column string  already quoted
 ---@param needle string
----@return string clause_value, string escape_clause
-function M.like_pattern(needle)
-  local escaped = needle:gsub("([%%_" .. ESCAPE .. "])", ESCAPE .. "%1")
-  return "%" .. escaped .. "%", (" escape '%s'"):format(ESCAPE)
+---@param dialect string
+---@return string
+function M.match_predicate(column, needle, dialect)
+  if dialect == "postgres" then
+    return ("strpos(%s, %s) > 0"):format(column, M.quote_literal(needle, dialect))
+  end
+  if dialect == "sqlite" then
+    -- SQLite's `instr` compares bytes, like its `replace`.
+    return ("instr(%s, %s) > 0"):format(column, M.quote_literal(needle, dialect))
+  end
+  -- MySQL and MariaDB apply the collation to `instr` too, so the needle is cast
+  -- to binary to force the same comparison `replace` performs.
+  return ("instr(%s, cast(%s as binary)) > 0"):format(
+    column,
+    M.quote_literal(needle, dialect)
+  )
+end
+
+--- The same test, ignoring case.
+---
+--- Only ever used to report the gap: "three more rows match if case is
+--- ignored, and the replacement would not touch them" is worth knowing before
+--- deciding the search found what you meant.
+---@param column string  already quoted
+---@param needle string
+---@param dialect string
+---@return string
+function M.loose_predicate(column, needle, dialect)
+  local literal = M.quote_literal(needle:lower(), dialect)
+  return ("instr(lower(%s), %s) > 0"):format(column, literal)
 end
 
 -- ---------------------------------------------------------------------------
@@ -168,15 +195,18 @@ end
 ---@param schema string
 ---@return string
 function M.count_sql(group, needle, dialect, schema)
-  local pattern, escape = M.like_pattern(needle)
-  local literal = M.quote_literal(pattern, dialect)
-
   local selects = {}
   for _, column in ipairs(group.columns) do
     local quoted = M.quote_ident(column, dialect)
+    -- Two counts per column: what would actually be replaced, and what would
+    -- match if case were ignored. The second is never acted on, only reported.
     table.insert(
       selects,
-      ("sum(case when %s like %s%s then 1 else 0 end)"):format(quoted, literal, escape)
+      ("sum(case when %s then 1 else 0 end)"):format(M.match_predicate(quoted, needle, dialect))
+    )
+    table.insert(
+      selects,
+      ("sum(case when %s then 1 else 0 end)"):format(M.loose_predicate(quoted, needle, dialect))
     )
   end
 
@@ -197,7 +227,7 @@ function M.search(opts)
   local groups = M.text_columns(opts)
 
   local hits, skipped = {}, {}
-  local total, searched = 0, 0
+  local total, searched, ignored = 0, 0, 0
 
   for index, group in ipairs(groups) do
     local sql = M.count_sql(group, opts.needle, dialect, opts.schema)
@@ -211,11 +241,18 @@ function M.search(opts)
       searched = searched + 1
       local row = result.rows and result.rows[1] or {}
       for position, column in ipairs(group.columns) do
-        local count = tonumber(row[position]) or 0
+        local count = tonumber(row[position * 2 - 1]) or 0
+        local loose = tonumber(row[position * 2]) or 0
         if count > 0 then
-          table.insert(hits, { table = group.table, column = column, count = count })
+          table.insert(hits, {
+            table = group.table,
+            column = column,
+            count = count,
+            ignoring_case = loose,
+          })
           total = total + count
         end
+        ignored = ignored + math.max(0, loose - count)
       end
     end
 
@@ -234,7 +271,14 @@ function M.search(opts)
     return a.column < b.column
   end)
 
-  return { hits = hits, total = total, searched = searched, skipped = skipped }
+  return {
+    hits = hits,
+    total = total,
+    searched = searched,
+    skipped = skipped,
+    -- Rows that differ only in case. Reported, never replaced.
+    ignoring_case = ignored,
+  }
 end
 
 -- ---------------------------------------------------------------------------
@@ -252,20 +296,15 @@ end
 function M.update_sql(hit, opts)
   local dialect = opts.dialect
   local column = M.quote_ident(hit.column, dialect)
-  local needle = M.quote_literal(opts.needle, dialect)
-  local replacement = M.quote_literal(opts.replacement, dialect)
-  local pattern, escape = M.like_pattern(opts.needle)
 
-  return ("update %s.%s set %s = replace(%s, %s, %s) where %s like %s%s"):format(
+  return ("update %s.%s set %s = replace(%s, %s, %s) where %s"):format(
     M.quote_ident(opts.schema, dialect),
     M.quote_ident(hit.table, dialect),
     column,
     column,
-    needle,
-    replacement,
-    column,
-    M.quote_literal(pattern, dialect),
-    escape
+    M.quote_literal(opts.needle, dialect),
+    M.quote_literal(opts.replacement, dialect),
+    M.match_predicate(column, opts.needle, dialect)
   )
 end
 
@@ -374,6 +413,16 @@ function M.render(report, opts)
   )
   table.insert(marks, { line = #lines - 1, group = "DBClientHelpText" })
 
+  if (report.ignoring_case or 0) > 0 then
+    table.insert(
+      lines,
+      ("%d more row(s) match if case is ignored, and would not be changed"):format(
+        report.ignoring_case
+      )
+    )
+    table.insert(marks, { line = #lines - 1, group = "DBClientSeverityWarn" })
+  end
+
   if #report.skipped > 0 then
     table.insert(lines, ("%d table(s) could not be searched"):format(#report.skipped))
     table.insert(marks, { line = #lines - 1, group = "DBClientSeverityWarn" })
@@ -460,16 +509,11 @@ function M.open(opts)
       if not hit then
         return
       end
-      local pattern, escape = M.like_pattern(needle)
       require("dbclient.ui.data").open({
         session_id = target.id,
         schema = schema,
         table = hit.table,
-        filter = ("%s like %s%s"):format(
-          M.quote_ident(hit.column, dialect),
-          M.quote_literal(pattern, dialect),
-          escape
-        ),
+        filter = M.match_predicate(M.quote_ident(hit.column, dialect), needle, dialect),
       })
     end, { buffer = bufnr, silent = true, desc = "DBClient: show the matching rows" })
 
