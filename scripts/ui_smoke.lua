@@ -345,6 +345,130 @@ vim.wait(2000, function()
   return false
 end, 50)
 
+-- 11. Schema as files, drift, schema-wide replace and migration review.
+local client = require("dbclient.core.client")
+local schemafiles = require("dbclient.schemafiles")
+local replace = require("dbclient.replace")
+local migration = require("dbclient.migration")
+
+print("")
+print("── schema dumped as files " .. string.rep("─", 46))
+client.async(function()
+  local dumped = schemafiles.dump({
+    session_id = target.id,
+    schema = "main",
+    dir = workdir .. "/db/schema",
+  })
+  for _, path in ipairs(dumped.written) do
+    print("  " .. path:sub(#workdir + 2))
+  end
+
+  local clean = schemafiles.drift({
+    session_id = target.id,
+    schema = "main",
+    dir = workdir .. "/db/schema",
+  })
+  print("  drift right after a dump: " .. #clean.findings .. " finding(s)")
+
+  -- Change the server behind the repository's back.
+  session.query(target.id, "alter table orders add column note text")
+  session.invalidate(target.id)
+  local drifted = schemafiles.drift({
+    session_id = target.id,
+    schema = "main",
+    dir = workdir .. "/db/schema",
+  })
+  print("")
+  for _, line in ipairs((schemafiles.render_drift(drifted, "main"))) do
+    print("  " .. line)
+  end
+end)
+vim.wait(5000, function()
+  return false
+end, 50)
+
+print("")
+print("── find and replace across the schema " .. string.rep("─", 34))
+client.async(function()
+  local report = replace.search({
+    session_id = target.id,
+    schema = "main",
+    needle = "Sp. z o.o.",
+  })
+  for _, line in ipairs((replace.render(report, {
+    needle = "Sp. z o.o.",
+    replacement = "S.A.",
+    schema = "main",
+  }))) do
+    print("  " .. line)
+  end
+
+  if #report.hits > 0 then
+    local applied = replace.apply({
+      session_id = target.id,
+      schema = "main",
+      needle = "Sp. z o.o.",
+      replacement = "S.A.",
+      hits = report.hits,
+    })
+    print("  applied: " .. applied.rows .. " row(s)")
+    local check = session.query(target.id, "select name from customers where id = 1")
+    print("  customers.name is now: " .. tostring(check.rows[1][1]))
+  end
+end)
+vim.wait(5000, function()
+  return false
+end, 50)
+
+print("")
+print("── migration review, same file on two servers " .. string.rep("─", 26))
+local doctrine = {
+  "<?php",
+  "final class Version20260315 extends AbstractMigration",
+  "{",
+  "    public function up(Schema $schema): void",
+  "    {",
+  "        $this->addSql('ALTER TABLE inquiry ADD priority INT DEFAULT 0 NOT NULL');",
+  "        $this->addSql('CREATE INDEX idx_priority ON inquiry (priority)');",
+  "        $this->addSql('ALTER TABLE device ADD CONSTRAINT fk_dev FOREIGN KEY (address_id) REFERENCES address (id)');",
+  "    }",
+  "}",
+}
+local statements = migration.extract(doctrine, "Version20260315.php")
+for _, spec in ipairs({
+  { adapter = "mariadb", version = "5.5.5-10.2.44-MariaDB" },
+  { adapter = "mariadb", version = "8.0.35" },
+  { adapter = "postgres", version = "16.2" },
+}) do
+  local server = migration.server_profile({
+    adapter = spec.adapter,
+    server_version = spec.version,
+  })
+  local findings = migration.analyse({
+    statements = statements,
+    server = server,
+    row_counts = { inquiry = 1200000, device = 340000 },
+  })
+  print("")
+  for _, line in ipairs((migration.render({
+    findings = findings,
+    statements = statements,
+    server = server,
+    path = "Version20260315.php",
+    width = 74,
+  }))) do
+    print("  " .. line)
+  end
+end
+
+print("")
+print("── the generated palette " .. string.rep("─", 47))
+for index, line in ipairs((require("dbclient.ui.theme").describe())) do
+  if index <= 12 then
+    print("  " .. line)
+  end
+end
+
 print("")
 print("UI smoke run complete")
 session.disconnect_all()

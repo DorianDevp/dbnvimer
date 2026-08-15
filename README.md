@@ -286,7 +286,7 @@ Available everywhere; prefixed with `g:dbclient_leader` (default `<leader>d`).
 | `<leader>dB` | run a statement on every connection |
 | `<leader>dn` | turn this markdown buffer into a notebook |
 | `<leader>du` | writes DBClient made, and how to undo them |
-| `<leader>de` | entity relationship diagram for a schema |
+| `<leader>dE` | entity relationship diagram for a schema |
 | `<leader>di` | import a CSV into a table |
 | `<leader>dv` | compare result sets or connections |
 | `<leader>d<CR>` | quick query: type SQL, get rows |
@@ -302,6 +302,10 @@ Available everywhere; prefixed with `g:dbclient_leader` (default `<leader>d`).
 | `<leader>dF` | extract a row plus everything it needs |
 | `<leader>dI` | would this index help? |
 | `<leader>dT` | follow changes as they are committed |
+| `<leader>dM` | what this migration will lock, and for how long |
+| `<leader>dD` | write the schema out as files |
+| `<leader>dV` | compare the server against the committed schema |
+| `<leader>d/` | find and replace across every table |
 
 ### Sidebar
 

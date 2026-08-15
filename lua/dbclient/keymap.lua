@@ -47,7 +47,7 @@ M.groups = {
       { lhs = "B", action = "broadcast", desc = "run a statement on every connection" },
       { lhs = "n", action = "notebook", desc = "turn this markdown buffer into a notebook" },
       { lhs = "u", action = "undo_log", desc = "writes DBClient made, and how to undo them" },
-      { lhs = "e", action = "diagram", desc = "entity relationship diagram for a schema" },
+      { lhs = "E", action = "diagram", desc = "entity relationship diagram for a schema" },
       { lhs = "i", action = "import", desc = "import a CSV into a table" },
       { lhs = "v", action = "compare", desc = "compare result sets or connections" },
       { lhs = "<CR>", action = "scratch", desc = "quick query: type SQL, get rows" },
@@ -63,6 +63,10 @@ M.groups = {
       { lhs = "F", action = "fixture", desc = "extract a row plus everything it needs" },
       { lhs = "I", action = "hypothetical_index", desc = "would this index help?" },
       { lhs = "T", action = "tail", desc = "follow changes as they are committed" },
+      { lhs = "M", action = "migration_review", desc = "what this migration will lock, and for how long" },
+      { lhs = "D", action = "schema_dump", desc = "write the schema out as files" },
+      { lhs = "V", action = "schema_drift", desc = "compare the server against the committed schema" },
+      { lhs = "/", action = "replace_in_schema", desc = "find and replace across every table" },
     },
   },
 
@@ -468,6 +472,38 @@ function M.documentation()
     end
   end
   return lines
+end
+
+--- Sanity check used by the test suite: no group may bind the same key twice.
+---
+--- Two entries with the same `lhs` are not a conflict Neovim reports — the
+--- second silently replaces the first, so one documented mapping becomes
+--- unreachable while `g?` keeps promising it. That happened once already, with
+--- `<leader>de` claimed by both the diagram and the export.
+---@return table[]  `{ group, lhs, actions }`
+function M.duplicates()
+  local found = {}
+  for name, spec in pairs(M.groups) do
+    local seen = {}
+    for _, entry in ipairs(spec.keys or {}) do
+      for _, mode in ipairs(type(entry.mode) == "table" and entry.mode or { entry.mode or "n" }) do
+        local key = mode .. " " .. entry.lhs
+        if seen[key] and seen[key] ~= entry.action then
+          table.insert(found, {
+            group = name,
+            lhs = entry.lhs,
+            mode = mode,
+            actions = { seen[key], entry.action },
+          })
+        end
+        seen[key] = entry.action
+      end
+    end
+  end
+  table.sort(found, function(a, b)
+    return (a.group .. a.lhs) < (b.group .. b.lhs)
+  end)
+  return found
 end
 
 --- Sanity check used by the test suite: every action must have a handler.

@@ -480,6 +480,62 @@ local function define_commands()
     require("dbclient.ui.help").show_palette()
   end, { force = true, desc = "Show the generated palette and its contrast ratios" })
 
+  command("DBClientMigrationReview", function(args)
+    require("dbclient.migration").review({ path = args.args ~= "" and args.args or nil })
+  end, {
+    nargs = "?",
+    complete = "file",
+    force = true,
+    desc = "What this migration will lock, and for how long",
+  })
+
+  command("DBClientSchemaDump", function(args)
+    local parts = vim.split(args.args, "%s+")
+    require("dbclient.schemafiles").dump_command({
+      dir = parts[1] ~= "" and parts[1] or nil,
+      schema = parts[2],
+      prune = not args.bang,
+    })
+  end, {
+    nargs = "*",
+    bang = true,
+    complete = "dir",
+    force = true,
+    desc = "Write the schema out as one .sql file per object (! keeps stale files)",
+  })
+
+  command("DBClientSchemaDrift", function(args)
+    local parts = vim.split(args.args, "%s+")
+    require("dbclient.schemafiles").drift_command({
+      dir = parts[1] ~= "" and parts[1] or nil,
+      schema = parts[2],
+    })
+  end, {
+    nargs = "*",
+    complete = "dir",
+    force = true,
+    desc = "Compare the live schema against the committed one",
+  })
+
+  command("DBClientReplace", function(args)
+    -- `:DBClientReplace 'old text' 'new text'`, quoted because the strings
+    -- being replaced usually contain spaces.
+    local parsed = {}
+    for quoted in args.args:gmatch("'([^']*)'") do
+      table.insert(parsed, quoted)
+    end
+    if #parsed == 0 then
+      for word in args.args:gmatch("%S+") do
+        table.insert(parsed, word)
+      end
+    end
+    require("dbclient.replace").open({ needle = parsed[1], replacement = parsed[2] })
+  end, {
+    nargs = "*",
+    force = true,
+    desc = "Find and replace across every text column in the schema",
+  })
+
   command("DBClientRestart", function()
     session.disconnect_all()
     client.stop()
@@ -740,6 +796,18 @@ local function global_handlers()
     end,
     tail = function()
       require("dbclient.cdc").start()
+    end,
+    migration_review = function()
+      require("dbclient.migration").review()
+    end,
+    schema_dump = function()
+      require("dbclient.schemafiles").dump_command()
+    end,
+    schema_drift = function()
+      require("dbclient.schemafiles").drift_command()
+    end,
+    replace_in_schema = function()
+      require("dbclient.replace").open()
     end,
     compare = function()
       vim.ui.select({
