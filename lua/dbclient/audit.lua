@@ -200,6 +200,16 @@ function M.collect(session_id, schema_name, opts)
   opts = opts or {}
   local schema = { name = schema_name, tables = {} }
 
+  -- One query for every foreign key in the schema, then grouped by table.
+  local keys_by_table = {}
+  local all_ok, all_keys = pcall(session.schema_foreign_keys, session_id, schema_name)
+  if all_ok then
+    for _, key in ipairs(all_keys) do
+      keys_by_table[key.table] = keys_by_table[key.table] or {}
+      table.insert(keys_by_table[key.table], key)
+    end
+  end
+
   for _, entry in ipairs(session.tables(session_id, schema_name)) do
     local is_view = tostring(entry.kind):find("VIEW") ~= nil
     local columns = {}
@@ -223,13 +233,7 @@ function M.collect(session_id, schema_name, opts)
       end
     end
 
-    local foreign_keys = {}
-    if not is_view then
-      local keys_ok, keys = pcall(session.foreign_keys, session_id, schema_name, entry.name)
-      if keys_ok then
-        foreign_keys = keys
-      end
-    end
+    local foreign_keys = is_view and {} or (keys_by_table[entry.name] or {})
 
     local stats = nil
     if opts.deep and not is_view then

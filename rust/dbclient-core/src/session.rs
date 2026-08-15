@@ -165,6 +165,12 @@ pub trait DbSession: Send {
     fn foreign_keys(&mut self, schema: &str, table: &str) -> Result<Vec<JsonValue>>;
     /// Foreign keys in the whole schema that point *at* `table`.
     fn referencing_keys(&mut self, schema: &str, table: &str) -> Result<Vec<JsonValue>>;
+    /// Every foreign key in a schema, in one round trip.
+    ///
+    /// Asking table by table means two queries per table against
+    /// `information_schema`, which is slow enough to notice: on a 286 table
+    /// schema it took 3.6 seconds, fifteen times the next slowest step.
+    fn schema_foreign_keys(&mut self, schema: &str) -> Result<Vec<JsonValue>>;
 
     fn preview(&mut self, params: &PreviewParams) -> Result<QueryOutput>;
     fn count(&mut self, params: &PreviewParams) -> Result<u64>;

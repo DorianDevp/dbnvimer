@@ -506,6 +506,24 @@ impl DbSession for SqliteSession {
         Ok(found)
     }
 
+    fn schema_foreign_keys(&mut self, schema: &str) -> Result<Vec<JsonValue>> {
+        // SQLite has no catalog of foreign keys, so the per-table pragma is
+        // the only source; at least it is a local file.
+        let schema = Self::schema_or_main(schema);
+        let mut all = Vec::new();
+        for entry in self.tables(&schema)? {
+            let Some(name) = entry["name"].as_str().map(str::to_string) else {
+                continue;
+            };
+            for key in self.foreign_keys(&schema, &name)? {
+                let mut item = key.clone();
+                item["table"] = json!(name);
+                all.push(item);
+            }
+        }
+        Ok(all)
+    }
+
     fn preview(&mut self, params: &PreviewParams) -> Result<QueryOutput> {
         let sql = self.build_select(params, false)?;
         let limit = clamp_limit(params.limit, 200);

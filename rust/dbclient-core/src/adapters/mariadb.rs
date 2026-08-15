@@ -634,6 +634,34 @@ impl DbSession for MariaDbSession {
             .collect())
     }
 
+    fn schema_foreign_keys(&mut self, schema: &str) -> Result<Vec<JsonValue>> {
+        let schema = self.schema_or_current(schema);
+        let output = self.run(
+            r#"
+            select table_name, column_name, constraint_name,
+                   referenced_table_schema, referenced_table_name, referenced_column_name
+            from information_schema.key_column_usage
+            where table_schema = ? and referenced_table_name is not null
+            order by table_name, constraint_name, ordinal_position
+            "#,
+            Params::Positional(vec![Value::from(schema)]),
+        )?;
+        Ok(output
+            .rows
+            .iter()
+            .map(|row| {
+                json!({
+                    "table": text(row.first()),
+                    "column": text(row.get(1)),
+                    "name": text(row.get(2)),
+                    "ref_schema": text(row.get(3)),
+                    "ref_table": text(row.get(4)),
+                    "ref_column": text(row.get(5)),
+                })
+            })
+            .collect())
+    }
+
     fn preview(&mut self, params: &PreviewParams) -> Result<QueryOutput> {
         let sql = self.build_select(params, false)?;
         let limit = clamp_limit(params.limit, 200);

@@ -543,6 +543,43 @@ impl DbSession for PostgresSession {
             .collect())
     }
 
+    fn schema_foreign_keys(&mut self, schema: &str) -> Result<Vec<JsonValue>> {
+        let sql = format!(
+            r#"
+            select src.relname, src_col.attname, con.conname,
+                   tgt_ns.nspname, tgt.relname, tgt_col.attname
+            from pg_constraint con
+            join pg_class src on src.oid = con.conrelid
+            join pg_namespace src_ns on src_ns.oid = src.relnamespace
+            join pg_class tgt on tgt.oid = con.confrelid
+            join pg_namespace tgt_ns on tgt_ns.oid = tgt.relnamespace
+            join lateral unnest(con.conkey, con.confkey) as cols(src_attnum, tgt_attnum) on true
+            join pg_attribute src_col
+              on src_col.attrelid = src.oid and src_col.attnum = cols.src_attnum
+            join pg_attribute tgt_col
+              on tgt_col.attrelid = tgt.oid and tgt_col.attnum = cols.tgt_attnum
+            where con.contype = 'f' and src_ns.nspname = {}
+            order by src.relname, con.conname
+            "#,
+            quote_literal(schema)
+        );
+        let output = self.simple(&sql)?;
+        Ok(output
+            .rows
+            .iter()
+            .map(|row| {
+                json!({
+                    "table": text(row.first()),
+                    "column": text(row.get(1)),
+                    "name": text(row.get(2)),
+                    "ref_schema": text(row.get(3)),
+                    "ref_table": text(row.get(4)),
+                    "ref_column": text(row.get(5)),
+                })
+            })
+            .collect())
+    }
+
     fn preview(&mut self, params: &PreviewParams) -> Result<QueryOutput> {
         let sql = self.build_select(params, false)?;
         let limit = clamp_limit(params.limit, 200);

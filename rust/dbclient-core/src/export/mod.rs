@@ -594,6 +594,17 @@ pub fn run(
     let sql = spec.build_sql(session.dialect())?;
     let mut warnings = Vec::new();
 
+    // Generated SQL has to run on the database it came from. Defaulting to one
+    // dialect produced `insert into "t"` against MySQL, which is a syntax error
+    // — the file looked right and would not run.
+    let spec = &{
+        let mut resolved = spec.clone();
+        if resolved.sql_dialect.is_none() {
+            resolved.sql_dialect = Some(session.dialect().to_string());
+        }
+        resolved
+    };
+
     if spec.sql_mode == SqlMode::Upsert
         && spec.sql_key_columns.is_empty()
         && !matches!(session.dialect(), "mariadb" | "mysql")

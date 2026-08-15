@@ -150,6 +150,29 @@ binary will be rejected with a clear message rather than misbehaving.
   breadcrumb sits in the winbar. Navigating from a rewound position drops the
   forward branch, the way a browser does.
 
+### Found by running against real schemas
+
+Two scripts now drive the client over a schema you already have, and running
+them against a 286 table PrestaShop database and a 65 table Doctrine schema
+turned up three things fixtures never would have:
+
+- **Generated SQL used the wrong dialect.** The export writer defaulted to
+  PostgreSQL quoting when none was given, so a fixture extracted from MariaDB
+  came out as `insert into "serwis"."inquiry"` — a file that looks right and
+  does not run. The dialect now defaults to the session's own.
+- **Walking foreign keys table by table was the slowest thing the client did**,
+  by a factor of fifteen: two `information_schema` queries per table meant 572
+  round trips and 3.4 seconds on a 286 table schema. There is now one query for
+  a whole schema, which the join graph and the audit use; the same work takes
+  under 14 ms.
+- **The test suite read and wrote the user's real data directory**, so a
+  workspace saved by one run made a later run fail. Tests and probe scripts now
+  use a temporary directory.
+
+Neither schema produced a rendering or metadata failure: 56 column tables, five
+column primary keys, tables with no key at all and three collations in one
+database all came out correct.
+
 ### Test data, indexes and change streams
 
 - **Fixture extraction** (`gx`): a row plus everything it needs to exist, as

@@ -818,6 +818,27 @@ charted anyway if its values are numbers.
 Run `:checkhealth dbclient` to verify all of the above, including that the core
 binary's protocol version matches the plugin's.
 
+## Testing against a real schema
+
+Fixtures only contain what the person writing them thought of. Two scripts run
+the client over a schema you already have:
+
+```sh
+# Walk every table: metadata, previews, rendering, export, audit.
+DBCLIENT_STRESS="host=127.0.0.1 port=3306 user=root password=… database=shop" \
+  nvim --headless -u NONE -c "luafile scripts/stress_real_schema.lua"
+
+# Walk the foreign key edges: join paths, fixtures, following a key.
+DBCLIENT_PROBE="host=127.0.0.1 port=3306 user=root password=… database=shop" \
+  nvim --headless -u NONE -c "luafile scripts/relational_probe.lua"
+```
+
+Both connect read-only, write nothing to your data directory, and collect every
+failure rather than stopping at the first. They have been run against a 286
+table PrestaShop database (56 column tables, 132 composite primary keys, no
+foreign keys at all, three collations) and a 65 table Doctrine schema with 97
+foreign keys.
+
 ## Development
 
 ```sh

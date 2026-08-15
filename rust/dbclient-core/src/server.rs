@@ -487,6 +487,9 @@ fn handle_session_op(
             &string_param(request, "schema")?,
             &string_param(request, "table")?
         )?)),
+        "schema-foreign-keys" => Ok(json!(
+            session.schema_foreign_keys(&string_param(request, "schema")?)?
+        )),
         "referencing-keys" => Ok(json!(session.referencing_keys(
             &string_param(request, "schema")?,
             &string_param(request, "table")?

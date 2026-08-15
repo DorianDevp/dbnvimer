@@ -4,7 +4,18 @@ vim.opt.runtimepath:prepend(vim.fn.getcwd())
 
 local t = require("tests.init")
 
-require("dbclient.config").setup({ connections = {} })
+-- Everything the plugin persists — the connection store, history, workspaces,
+-- exports — is keyed off one directory. Pointing it at a temporary one keeps
+-- the suite from reading or writing the user's real data, which it otherwise
+-- does: a workspace saved by an earlier run made a later test fail.
+local sandbox = vim.fn.tempname() .. "/dbclient"
+vim.fn.mkdir(sandbox, "p")
+require("dbclient.config").setup({
+  connections = {},
+  history = { path = sandbox .. "/history.jsonl" },
+  export = { dir = sandbox .. "/exports" },
+  store = { path = sandbox .. "/connections.json" },
+})
 
 local specs = vim.fn.glob(vim.fn.getcwd() .. "/tests/*_spec.lua", false, true)
 table.sort(specs)

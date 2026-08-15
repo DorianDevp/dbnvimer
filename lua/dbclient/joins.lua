@@ -41,28 +41,29 @@ function M.graph(session_id, schema, opts)
     graph.edges[entry.name] = graph.edges[entry.name] or {}
   end
 
-  for _, name in ipairs(graph.nodes) do
-    local ok, keys = pcall(session.foreign_keys, session_id, schema, name)
-    if ok then
-      for _, key_entry in ipairs(keys) do
-        local target = key_entry.ref_table
-        if graph.edges[target] then
-          -- Forward: this table holds the foreign key.
-          table.insert(graph.edges[name], {
-            to = target,
-            from_column = key_entry.column,
-            to_column = key_entry.ref_column,
-            constraint = key_entry.name,
-          })
-          -- Backwards, so the search can travel either way.
-          table.insert(graph.edges[target], {
-            to = name,
-            from_column = key_entry.ref_column,
-            to_column = key_entry.column,
-            constraint = key_entry.name,
-            reverse = true,
-          })
-        end
+  -- One query for the whole schema; asking table by table was the slowest
+  -- thing this did.
+  local ok, keys = pcall(session.schema_foreign_keys, session_id, schema)
+  if ok then
+    for _, key_entry in ipairs(keys) do
+      local name = key_entry.table
+      local target = key_entry.ref_table
+      if graph.edges[name] and graph.edges[target] then
+        -- Forward: this table holds the foreign key.
+        table.insert(graph.edges[name], {
+          to = target,
+          from_column = key_entry.column,
+          to_column = key_entry.ref_column,
+          constraint = key_entry.name,
+        })
+        -- Backwards, so the search can travel either way.
+        table.insert(graph.edges[target], {
+          to = name,
+          from_column = key_entry.ref_column,
+          to_column = key_entry.column,
+          constraint = key_entry.name,
+          reverse = true,
+        })
       end
     end
   end

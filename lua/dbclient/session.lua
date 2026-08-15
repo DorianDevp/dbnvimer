@@ -28,6 +28,7 @@ local function empty_cache()
     indexes = {},
     foreign_keys = {},
     referencing = {},
+    schema_keys = {},
   }
 end
 
@@ -291,6 +292,20 @@ function M.foreign_keys(id, schema, table_name, force)
       client.call("foreign-keys", { schema = schema, table = table_name }, session.id)
   end
   return session.cache.foreign_keys[key]
+end
+
+--- Every foreign key in a schema, in one round trip.
+---
+--- The per-table calls are fine for one table; asking for all of them was the
+--- slowest thing the client did on a large schema by a factor of fifteen.
+function M.schema_foreign_keys(id, schema, force)
+  local target = M.require_session(id)
+  target.cache.schema_keys = target.cache.schema_keys or {}
+  if force or not target.cache.schema_keys[schema] then
+    target.cache.schema_keys[schema] =
+      client.call("schema-foreign-keys", { schema = schema }, target.id)
+  end
+  return target.cache.schema_keys[schema]
 end
 
 function M.referencing_keys(id, schema, table_name, force)
