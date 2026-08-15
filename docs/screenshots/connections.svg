@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="611" height="180" viewBox="0 0 611 180" font-family="JetBrains Mono, DejaVu Sans Mono, monospace" font-size="13">
+<rect width="611" height="180" rx="8" fill="#16181d"/>
+<rect x="0" y="0" width="611" height="30" rx="8" fill="#1b1e24"/>
+<rect x="0" y="22" width="611" height="8" fill="#1b1e24"/>
+<circle cx="18" cy="15" r="5" fill="#e06c75"/><circle cx="36" cy="15" r="5" fill="#e5c07b"/><circle cx="54" cy="15" r="5" fill="#98c379"/>
+<text x="74" y="20" fill="#6b7280">Connections managed from inside the client</text>
+<line x1="0" y1="30" x2="611" y2="30" stroke="#2c313a" stroke-width="1"/>
+<text x="16" y="61" fill="#e5c07b" xml:space="preserve">connections</text>
+<text x="16" y="99" fill="#98c379" xml:space="preserve">● shop       setup     mariadb  root@127.0.0.1:53306/shop</text>
+<text x="16" y="118" fill="#c5cad3" xml:space="preserve">○ shop_prod  setup     mariadb  root@127.0.0.1:53306/shop</text>
+<text x="16" y="156" fill="#6b7280" xml:space="preserve">a add   c edit   x delete   t test   y adopt   &lt;CR&gt; connect   g? help</text>
+</svg>

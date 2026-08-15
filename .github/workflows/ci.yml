@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/dbclient-core
+
+      - name: Format
+        run: cargo fmt --manifest-path rust/dbclient-core/Cargo.toml -- --check
+
+      - name: Clippy
+        run: cargo clippy --manifest-path rust/dbclient-core/Cargo.toml --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --manifest-path rust/dbclient-core/Cargo.toml
+
+  lua:
+    name: Lua and end-to-end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/dbclient-core
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+
+      - name: Build the core
+        run: cargo build --release --manifest-path rust/dbclient-core/Cargo.toml
+
+      - name: Protocol smoke test
+        run: python3 scripts/protocol_smoke.py
+
+      - name: Lua and end-to-end tests
+        run: nvim --headless -u NONE -i NONE -c "luafile tests/run.lua"
+
+      - name: UI smoke test
+        run: |
+          sudo apt-get update && sudo apt-get install -y sqlite3
+          nvim --headless -u NONE -c "luafile scripts/ui_smoke.lua"
+
+      - name: Documentation is generated from the mapping table
+        run: nvim --headless -u NONE -c "luafile scripts/generate_docs.lua" -- --check
+
+  databases:
+    name: Adapters against real servers
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: dbclient
+          POSTGRES_DB: shop
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: dbclient
+          MARIADB_DATABASE: shop
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/dbclient-core
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+
+      - name: Build the core
+        run: cargo build --release --manifest-path rust/dbclient-core/Cargo.toml
+
+      - name: PostgreSQL adapter
+        env:
+          DBCLIENT_TEST_POSTGRES: "host=127.0.0.1 port=5432 user=postgres password=dbclient dbname=shop"
+        run: nvim --headless -u NONE -i NONE -c "luafile tests/adapters.lua"
+
+      - name: MariaDB adapter
+        env:
+          DBCLIENT_TEST_MARIADB: "host=127.0.0.1 port=3306 user=root password=dbclient database=shop"
+        run: nvim --headless -u NONE -i NONE -c "luafile tests/adapters.lua"

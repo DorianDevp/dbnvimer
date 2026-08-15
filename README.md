@@ -1,54 +1,51 @@
 # DBClient.nvim
 
-DBClient.nvim is a Neovim database client with a Lua UI and a Rust core.
+A database client for Neovim with a Lua front end and a Rust core.
 
-Adapters are lazy-loaded, so database-specific code is only loaded when a
-configured connection needs it.
+The design principle is that Neovim already knows how to edit text, and a
+database client that works with that is better than one that works around it:
 
-## Status
+- **Result sets are ordinary buffers.** Edit cells with `ciw`, a visual block, a
+  macro or `:%s/old/new/g`. `dd` stages a delete, `o` stages an insert, `u` is
+  your undo. `:w` turns the difference into `UPDATE` / `INSERT` / `DELETE`,
+  shows you the exact SQL, and applies it in one transaction.
+- **Schemas are ordinary buffers too.** `gD` opens the real `CREATE TABLE`;
+  editing it and writing produces a migration you can read and edit before it
+  runs. Comparing two schemas opens Neovim's own diff mode, so `]c` and `dp`
+  work without the plugin implementing a diff.
+- **Nothing blocks the editor.** A long query keeps running while you work, and
+  `<leader>dk` cancels it on the server.
+- **No new verbs.** Text objects (`ic`, `ir`, `iC`), the jumplist for foreign
+  keys, the quickfix list for reverse lookups, `vim.diagnostic` for SQL errors,
+  and `g?` for the keys of whatever buffer you are in.
 
-This is an initial implementation intended for publication after more real
-database testing. It was built with AI-assisted rapid development, so treat the
-current version as early software: useful, inspectable, and moving quickly, but
-not yet a mature database client.
-
-## Publishing Plan
-
-DBClient.nvim is being prepared for public release. Before publishing, the main
-work is adapter hardening against real MariaDB, PostgreSQL, and SQLite
-databases, plus focused tests around cell updates, SSH tunnels, and result
-rendering.
-
-## Features
-
-- MariaDB, PostgreSQL, and SQLite adapters through `dbclient-core`.
-- SSH local forwarding support for database connections behind a jump host.
-- A keyboard-first, Neovim-native database workspace.
-- Query execution into scratch result buffers.
-- Data preview buffers with explicit primary-key guarded cell updates.
-- Schema/object inspection buffers separate from data buffers.
-- Procedure/function discovery with query-buffer call seeding.
-- Lazy Lua adapter registry and Rust `DbAdapter` implementations.
-- Reusable scratch buffers with default Neovim highlight groups.
+Supported backends: **MariaDB/MySQL**, **PostgreSQL**, **SQLite**.
 
 ## Screenshots
 
-These screenshots are generated from a real DBClient session against a
-disposable MariaDB Docker container with a sample schema. The SVG sources are
-kept beside the PNGs so the captures stay reviewable and easy to regenerate.
+Generated from a real session by `scripts/capture_readme_screenshots.lua`; the
+SVG sources sit beside the PNGs so a change in appearance is a readable diff.
 
-![DBClient workspace overview](docs/screenshots/workspace.png)
+![Sidebar and an editable data buffer](docs/screenshots/workspace.png)
 
-![DBClient data buffer](docs/screenshots/data-buffer.png)
+Note what the grid is doing: `Łódź`, `Gdańsk` and `Kraków` line up because
+widths are counted in display cells; `∅` is a SQL `NULL` while row 5's `NULL` is
+the literal string; `has \| a pipe` and `two\nlines` are escaped so a row is
+always one line.
 
-![DBClient inspection buffer](docs/screenshots/inspect-buffer.png)
+![Editing a table as text](docs/screenshots/data-buffer.png)
 
-## Requirements
+`ciw` on a cell, `dd` on a row, then `:w`.
 
-- Neovim 0.10 or newer.
-- `ssh` on `PATH` when using SSH tunnels.
-- MariaDB, PostgreSQL, or SQLite access from the local machine or through SSH
-  forwarding where supported by the adapter.
+![A query buffer and its results](docs/screenshots/query-buffer.png)
+
+## Status
+
+Early software under active development, built with AI-assisted rapid
+development. The core protocol, the editable data buffer and the safety rails
+are covered by tests (43 Rust, 116 Lua, including an end-to-end suite against a
+real database); the PostgreSQL and MariaDB adapters need more testing against
+real production schemas before a 1.0.
 
 ## Installation
 
@@ -57,185 +54,439 @@ With `lazy.nvim`:
 ```lua
 {
   "DorianDevp/dbnvimer",
+  build = "cargo build --release --manifest-path rust/dbclient-core/Cargo.toml",
+  opts = {},
 }
 ```
 
-DBClient.nvim ships a bundled `dbclient-core` binary in `bin/` and uses it by
-default when it matches the current OS and CPU architecture.
+The Rust core is a single binary. `opts = {}` is enough to start: DBClient
+looks for connections in your project before you configure anything.
 
-Bundled binary names:
+## Zero configuration
 
-- `bin/dbclient-core-linux-x86_64`
-- `bin/dbclient-core-linux-aarch64`
-- `bin/dbclient-core-macos-x86_64`
-- `bin/dbclient-core-macos-aarch64`
-- `bin/dbclient-core-windows-x86_64.exe`
+On startup DBClient scans the project for databases it can already reach:
 
-## Manual Core Build
+| source | what it reads |
+| --- | --- |
+| `.env`, `.env.local` | `DATABASE_URL`, `POSTGRES_*`, `MYSQL_*` |
+| `docker-compose.yml` | postgres / mysql / mariadb services, published ports and credentials |
+| `config/database.yml` | Rails environments |
+| `.dbclient.lua` | a project-local connection table, gated behind a trust prompt |
 
-If your platform does not have a bundled binary yet, install a Rust stable
-toolchain and build the core manually:
+Detected connections appear in the sidebar marked `project`. Press `y` in the
+connection manager to copy one into your own store and edit it.
 
-```sh
-cargo build --release --manifest-path rust/dbclient-core/Cargo.toml
-```
+## Configuration
 
-Then point DBClient at the built binary in `setup()`:
+Connections can be managed entirely from inside the client — `<leader>dC`, then
+`a` to add one — and are stored in
+`stdpath("data")/dbclient/connections.json` with mode `0600`.
 
-```lua
-require("dbclient").setup({
-  core = {
-    command = vim.fn.stdpath("data") .. "/lazy/dbnvimer/rust/dbclient-core/target/release/dbclient-core",
-  },
-})
-```
-
-## Setup
+**Passwords are never written to that file.** A connection names where its
+secret comes from:
 
 ```lua
 require("dbclient").setup({
   connections = {
-    local_mariadb = {
-      adapter = "mariadb",
-      host = "127.0.0.1",
-      port = 3306,
-      user = "root",
-      password = vim.env.MARIADB_PASSWORD,
-      database = "app",
-    },
-    via_ssh = {
-      adapter = "mariadb",
-      host = "127.0.0.1",
-      port = 3306,
-      user = "app",
-      password = vim.env.MARIADB_PASSWORD,
-      database = "app",
-      ssh = {
-        host = "bastion.example.com",
-        user = "deploy",
-        port = 22,
-        remote_host = "127.0.0.1",
-        remote_port = 3306,
-      },
-    },
-    local_postgres = {
+    local_pg = {
       adapter = "postgres",
       host = "127.0.0.1",
       port = 5432,
       user = "postgres",
-      password = vim.env.POSTGRES_PASSWORD,
+      database = "shop",
+      password_env = "PGPASSWORD",       -- read from the environment
+    },
+
+    prod = {
+      adapter = "postgres",
+      host = "10.0.0.5",
+      user = "readonly",
+      database = "shop",
+      password_cmd = "pass show db/prod", -- read from a command
+      access = "read",                    -- refuse anything that is not a read
+      color = "red",                      -- every buffer's winbar turns red
+      ssh = { host = "bastion" },         -- Host alias from ~/.ssh/config
+    },
+
+    staging = {
+      adapter = "mariadb",
+      host = "127.0.0.1",
+      user = "app",
       database = "app",
+      password_prompt = true,             -- ask once per Neovim session
+      access = "sandbox",                 -- writes run, then always roll back
     },
-    local_sqlite = {
-      adapter = "sqlite",
-      path = vim.fn.expand("~/data/app.sqlite3"),
-    },
+
+    notes = { adapter = "sqlite", path = "~/notes.db" },
   },
 })
 ```
 
-SQLite uses `path` for the database file. PostgreSQL supports the same optional
-`ssh` table as MariaDB.
+### Access levels
+
+| `access` | behaviour |
+| --- | --- |
+| `write` | the default |
+| `read` | the **core** refuses any statement that does not return rows, so a UI bug cannot get around it |
+| `sandbox` | writes execute inside a transaction that is always rolled back, so you see what *would* happen |
+
+### Everything else
+
+```lua
+require("dbclient").setup({
+  core = { command = nil, statement_timeout_ms = nil },
+  ui = {
+    sidebar_width = 38,
+    result_height = 14,
+    max_cell_width = 48,
+    preview_limit = 200,
+    query_limit = 5000,
+    null_display = "∅",       -- distinct from the literal text "NULL"
+    bool_display = { "true", "false" },
+    row_stripes = true,
+    winbar = true,
+    virtual_fk = true,         -- show `→ users.id` beside foreign keys
+  },
+  keys = true,                 -- false registers no mappings at all
+  detect = { enabled = true },
+  store = { enabled = true },
+  history = { enabled = true, limit = 1000 },
+  guard = {
+    confirm_unfiltered_writes = true,
+    confirm_destructive = true,
+  },
+  codegen = {},                -- your own code generators
+})
+```
+
+Set `vim.g.dbclient_leader` to change the global prefix from `<leader>d`.
+
+## Safety
+
+Running the right statement against the wrong database is the failure mode that
+matters, so several things guard against it:
+
+- A connection with a `color` paints the winbar of **every** buffer bound to it.
+- `access = "read"` is enforced in the Rust core, not in the UI.
+- `access = "sandbox"` executes and rolls back, reporting what would have
+  changed.
+- `DELETE`/`UPDATE` without a `WHERE`, and `DROP`/`TRUNCATE`, are flagged as
+  `vim.diagnostic` entries as you type and require confirmation before running.
+- Writes from the data buffer carry the values they were based on, so an
+  `UPDATE` that would silently overwrite someone else's change fails instead.
+- Data-buffer writes need a primary key; without one the buffer is read-only.
 
 ## Commands
 
-- `:DBClient` opens the database sidebar.
-- `:DBClientConnect <name>` selects a configured connection.
-- `:DBClientQuery` executes the selected SQL or current statement.
-- `:DBClientQueryTab` opens or focuses the query buffer.
-- `:DBClientData <schema.table>` opens a table preview buffer.
-- `:DBClientClose` closes active tunnels.
+| command | what it does |
+| --- | --- |
+| `:DBClient` / `:DBClientToggle` | open or toggle the sidebar |
+| `:DBClientConnect [name]` | connect, or pick from a list |
+| `:DBClientDisconnect [name]` | close one connection |
+| `:DBClientConnections` | the connection manager |
+| `:DBClientData [schema.]table` | open a table's data buffer |
+| `:DBClientQuery` | run the statement at the cursor |
+| `:DBClientQueryBuffer` | open the scratch query buffer |
+| `:DBClientExplain[!]` | explain the statement (`!` for `ANALYZE`) |
+| `:DBClientBegin` / `:DBClientCommit` / `:DBClientRollback` | session transactions |
+| `:DBClientCancel` | cancel the running statement on the server |
+| `:DBClientActivity` / `:DBClientLocks` | server session and lock monitors |
+| `:DBClientSearch` | fuzzy-find any table or column |
+| `:DBClientHistory` / `:DBClientLog` | query history, statement log |
+| `:DBClientSchemaDiff` | diff two schemas in Neovim's diff mode |
+| `:DBClientDDL schema.object` | open an object's DDL |
+| `:DBClientGenerate schema.table [template]` | generate a struct, interface, schema |
+| `:DBClientHelp` | every mapping in one buffer |
+| `:DBClientRestart` | restart the core |
 
 ## Keyboard
 
-- `q` closes DBClient windows.
-- `<CR>` opens the item under cursor.
-- `o` opens the item under cursor.
-- `gd` opens table data for the focused table.
-- `gs` opens schema or table inspection.
-- `gq` opens or focuses the query buffer.
-- `]t` / `[t` jump between visible tables.
-- `s` searches visible table names.
-- `n` repeats the last table-name match.
-- `r` refreshes schemas and tables.
-- `e` opens a query buffer for the active connection.
-- `F` toggles fullscreen for DBClient windows.
-- In data buffers, `]c` / `[c` move cells, `]r` / `[r` move rows, `i` stages a cell edit in a transaction, `I` / `E` updates a cell immediately, and `T` reviews pending transaction changes.
-- `<leader>dq` executes SQL from a query buffer.
-- `<C-CR>` executes SQL from normal or insert mode in a query buffer.
-- `<leader>dc` opens the connection picker.
+Press `g?` in any DBClient buffer for the keys that apply there. This section is
+generated from the same table that registers the mappings.
 
-## Data Buffer Cell Editing
+<!-- keys:start -->
 
-Cell updates require a primary key. In a data buffer, press `i` on a cell to
-open an empty edit popup and stage the new value in a pending transaction. Press
-`T` to review staged changes, then `c` to commit them in one backend
-transaction, `r` to rollback the local changes, or `q` / `<Esc>` to keep
-editing.
+### Global
 
-Press `I` or `E` to edit the current cell and execute the update immediately.
-The edit popup starts empty and shows the old value in the popup title. To set a
-SQL `NULL`, enter `NULL` without quotes. For date and datetime values, enter the
-raw scalar value, for example `2025-05-29` or `2025-05-29 00:00:00`.
+Available everywhere; prefixed with `g:dbclient_leader` (default `<leader>d`).
 
-## Adapter Shape
+| key | action |
+| --- | --- |
+| `<leader>dd` | toggle the object sidebar |
+| `<leader>dc` | pick a connection |
+| `<leader>dC` | manage connections |
+| `<leader>dq` | open the scratch query buffer |
+| `<leader>dQ` | run the whole query buffer |
+| `<leader>ds` | search tables and columns |
+| `<leader>dh` | query history |
+| `<leader>dl` | statement log for this session |
+| `<leader>da` | server activity monitor |
+| `<leader>dL` | lock / blocking tree |
+| `<leader>dk` | cancel the running statement |
+| `<leader>db` | begin a transaction |
+| `<leader>dm` | commit the transaction |
+| `<leader>dr` | roll back the transaction |
+| `<leader>dx` | close the active connection |
 
-Adapters live under `lua/dbclient/adapters/<name>.lua` and are only loaded when
-selected. Current adapters:
+### Sidebar
 
-- `mariadb`
-- `postgres`
-- `sqlite`
+Object tree: connections, schemas, tables, columns and routines.
 
-Each adapter returns a table with:
+| key | action |
+| --- | --- |
+| `<CR>` | open or toggle the node |
+| `o` | open or toggle the node |
+| `l` | expand the node |
+| `h` | collapse the node or go to its parent |
+| `gd` | open table data |
+| `gs` | inspect the schema or table |
+| `gD` | open the DDL buffer |
+| `gq` | open a query buffer |
+| `gi` | list indexes |
+| `gz` | table and index sizes |
+| `gy` | yank the qualified object name |
+| `a` | add a connection |
+| `c` | edit the connection |
+| `x` | delete the stored connection |
+| `t` | test the connection |
+| `f` | filter the tree |
+| `F` | clear the filter |
+| `]t` | jump to the next table |
+| `[t` | jump to the previous table |
+| `r` | refresh the current node |
+| `R` | drop the metadata cache and refresh |
+| `q` | close the sidebar |
+| `g?` | show this help |
 
-- `connect(connection, config)`
-- `close(handle)`
-- `schemas(handle)`
-- `tables(handle, schema)`
-- `columns(handle, schema, table)`
-- `routines(handle, schema)`
-- `preview(handle, schema, table, limit)`
-- `update_cell(handle, schema, table, column, value, pk)`
-- `update_cells(handle, updates)`
-- `query(handle, sql)`
+### Data buffer
 
-This keeps DB-specific code outside the UI and lets new adapters remain lazy.
-The Rust core mirrors this with a `DbAdapter` trait; DB-specific SQL,
-identifier quoting, and value validation live in Rust adapter modules.
+The data buffer is a normal modifiable buffer. Edit cells the way you edit any text: `ciw`, visual block, `:%s/old/new/g`, macros, `dd` to delete a row, `o` to add one. `u` undoes staged changes because it is Neovim's own undo. Writing the buffer with `:w` turns the difference against the fetched snapshot into `UPDATE`, `INSERT` and `DELETE` statements, shows them for confirmation and applies them in one transaction.
 
-## Documentation Log
+Only navigation and inspection are mapped, so nothing shadows an editing key.
 
-The git history documents each implementation step with small commits. User
-visible behavior is also covered in `doc/dbclient.txt`, and release-level notes
-are kept in `CHANGELOG.md`.
+| key | action |
+| --- | --- |
+| `K` | inspect the full cell value |
+| `gd` | follow the foreign key under the cursor |
+| `gu` | find rows referencing this one |
+| `gs` | statistics for this column |
+| `gS` | sort by this column |
+| `gf` | filter rows with a WHERE expression |
+| `gF` | clear the filter and sort |
+| `gt` | transposed view of this row |
+| `gh` | hide this column |
+| `gH` | show all columns |
+| `gn` | set this cell to SQL NULL |
+| `gy` | yank cell, row or selection as... |
+| `gp` | duplicate this row as a new INSERT |
+| `gr` | reload from the database |
+| `gD` | open the DDL for this table |
+| `]c` | next cell |
+| `[c` | previous cell |
+| `]r` | next row |
+| `[r` | previous row |
+| `]p` | next page |
+| `[p` | previous page |
+| `g?` | show this help |
 
-## Development Checks
+### Query buffer
+
+A real `sql` buffer, so treesitter, completion and your own mappings apply. Statements are split by the core, which understands string literals, comments, dollar quoting and `DELIMITER`.
+
+| key | action |
+| --- | --- |
+| `<C-CR>` | run the statement at the cursor _(n, i)_ |
+| `<leader>dq` | run the statement or selection _(n, v)_ |
+| `<leader>dQ` | run every statement in the buffer |
+| `<leader>de` | explain the statement |
+| `<leader>dE` | explain analyze the statement |
+| `K` | describe the table or column under the cursor |
+| `gd` | open the DDL for the table under the cursor |
+| `g?` | show this help |
+
+### Result buffer
+
+Read-only grid. `:w name.csv` exports; the format follows the extension.
+
+| key | action |
+| --- | --- |
+| `K` | inspect the full cell value |
+| `gs` | statistics for this column |
+| `gt` | transposed view of this row |
+| `gy` | yank cell, row or selection as... |
+| `ge` | export the result set |
+| `]c` | next cell |
+| `[c` | previous cell |
+| `]r` | next row |
+| `[r` | previous row |
+| `q` | close the result buffer |
+| `g?` | show this help |
+
+### DDL buffer
+
+The object's `CREATE` statement as text. Edit it and `:w` to see the migration DBClient would run; nothing reaches the server until you confirm.
+
+| key | action |
+| --- | --- |
+| `gr` | reload the DDL from the server |
+| `gD` | diff against the server version |
+| `q` | close the buffer |
+| `g?` | show this help |
+
+### Plan buffer
+
+Query plan as a foldable tree. The costliest nodes are highlighted.
+
+| key | action |
+| --- | --- |
+| `<CR>` | fold or unfold this node |
+| `gj` | jump to the most expensive node |
+| `gr` | run the plan again |
+| `ga` | switch to EXPLAIN ANALYZE |
+| `q` | close the plan |
+| `g?` | show this help |
+
+### Activity monitor
+
+Live server sessions; refreshes on a timer.
+
+| key | action |
+| --- | --- |
+| `x` | cancel the statement under the cursor |
+| `X` | terminate the session under the cursor |
+| `gr` | refresh now |
+| `gt` | toggle auto refresh |
+| `q` | close the monitor |
+| `g?` | show this help |
+
+### Connection manager
+
+Add, edit and test connections without leaving Neovim.
+
+| key | action |
+| --- | --- |
+| `<CR>` | connect |
+| `a` | add a connection |
+| `c` | edit the connection |
+| `x` | delete the connection |
+| `t` | test the connection |
+| `y` | copy a detected connection into the store |
+| `gr` | rescan the project |
+| `q` | close the manager |
+| `g?` | show this help |
+
+### Text objects
+
+Available in data and result buffers, in operator-pending and visual mode.
+
+| key | action |
+| --- | --- |
+| `ic` | inner cell |
+| `ac` | a cell, including its separator |
+| `ir` | inner row |
+| `ar` | a row, including the newline |
+| `iC` | inner column, every row of it |
+| `aC` | a column, including its separator |
+
+<!-- keys:stop -->
+
+## The data buffer
+
+Opening a table gives you a normal modifiable buffer:
+
+```
+shop.customers  ·  rows 1-200 of 4123  ·  order by id asc
+id  | name    | city | note
+----+---------+------+-----------
+1   | Łódź    | PL   | ∅
+2   | NULL    | DE   | literal null
+3   | Kraków  | PL   | has \| pipe
+4   | Gdańsk  | ∅    | two\nlines
+```
+
+Things worth knowing:
+
+- `∅` is a SQL `NULL`. The literal text `NULL` renders as itself, and both
+  survive a round trip through the buffer.
+- Values containing a newline, a tab or the column separator are escaped
+  (`\n`, `\t`, `\|`) so a row is always one line, and unescaped on write.
+- Column widths are measured in display cells, so `Łódź` and CJK text line up.
+- A cell too wide to show is truncated with `…`; editing a truncated cell is
+  **refused** rather than silently shortening the stored value. Use `K` to edit
+  the whole value instead.
+- Row identity is tracked with extmarks and reconciled against the primary key,
+  so reordering, deleting and line-wise edits attribute changes to the right
+  row.
+- `:w` shows the summary *and* the exact SQL, generated by the same code that
+  will run it, before anything is applied.
+
+## Query buffers
+
+A query buffer is a real `sql` buffer. Statements are split by the Rust core,
+which understands string literals, `--` and `/* */` comments, PostgreSQL dollar
+quoting and MySQL's `DELIMITER`, so a semicolon inside a string or a stored
+procedure body does not split a statement.
+
+A `-- @conn: name` header binds a `.sql` file to a connection, so a directory of
+per-environment queries can live in the repository.
+
+`K` describes the table or column under the cursor from the cached schema, `gd`
+opens its DDL, and completion (`omnifunc`, plus an `nvim-cmp` source when cmp is
+installed) offers tables, columns and routines.
+
+## Requirements
+
+- Neovim 0.10 or newer (0.11+ recommended)
+- A Rust toolchain to build the core, or a bundled binary for your platform
+- `ssh` on `PATH` for tunnels
+
+Run `:checkhealth dbclient` to verify all of the above, including that the core
+binary's protocol version matches the plugin's.
+
+## Development
 
 ```sh
+# Rust: format, lint, test
 cargo fmt --manifest-path rust/dbclient-core/Cargo.toml
-cargo check --manifest-path rust/dbclient-core/Cargo.toml
-nvim --headless -u NONE -i NONE -c "set rtp+=." -c "lua require('dbclient').setup({ connections = {} })" -c "qa"
+cargo clippy --manifest-path rust/dbclient-core/Cargo.toml -- -D warnings
+cargo test --manifest-path rust/dbclient-core/Cargo.toml
+
+# Lua: unit and end-to-end tests (needs the core built)
+cargo build --release --manifest-path rust/dbclient-core/Cargo.toml
+nvim --headless -u NONE -i NONE -c "luafile tests/run.lua"
+
+# Protocol smoke test over stdio
+python3 scripts/protocol_smoke.py
+
+# Regenerate the documentation from the mapping table
+nvim --headless -u NONE -c "luafile scripts/generate_docs.lua"
 ```
 
-## Screenshot Capture
+## Architecture
 
-The README screenshots are generated by `scripts/capture_readme_screenshots.lua`.
-It expects a MariaDB instance on `127.0.0.1:13306` with the sample `shop`
-schema used for the captures, then drives DBClient in headless Neovim and
-rewrites `docs/screenshots/*.svg`. PNG copies are rendered from those SVGs with
-`rsvg-convert`.
-
-## Bundled Binary Release
-
-Run the `Bundle core binaries` GitHub Actions workflow manually before tagging a
-release. It builds `dbclient-core` on Linux, macOS, and Windows runners, copies
-the outputs into `bin/`, and commits changed binaries back to the repository.
-
-After the workflow commit lands:
-
-```sh
-git pull
-git tag v0.1.0
-git push origin v0.1.0
 ```
+lua/dbclient/
+  core/client.lua      async JSON-RPC client for the daemon
+  session.lua          many live connections, each with its own metadata cache
+  keymap.lua           every mapping, once; g? and the docs are generated from it
+  connections/         registry, store, project detection, manager UI
+  data/diff.lua        buffer text -> change set (pure, tested)
+  ddl/migrate.lua      DDL text -> migration (pure, tested)
+  ui/grid.lua          reversible grid rendering (pure, tested)
+  ui/…                 sidebar, data, query, results, ddl, explain, activity
+
+rust/dbclient-core/
+  server.rs            the daemon: one thread and one connection per session
+  session.rs           the DbSession trait, access control, value classes
+  sqlparse.rs          dialect-tolerant statement splitter
+  adapters/            mariadb, postgres, sqlite
+  tunnel.rs            SSH forwarding with a retained child process
+```
+
+The core is one long-lived process hosting many sessions. That is what makes
+real transactions, server-side cancellation, and non-blocking queries possible;
+the previous design spawned a process and opened a connection per command.
+
+## License
+
+MIT

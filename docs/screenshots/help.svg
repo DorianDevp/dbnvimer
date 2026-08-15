@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="704" height="731" viewBox="0 0 704 731" font-family="JetBrains Mono, DejaVu Sans Mono, monospace" font-size="13">
+<rect width="704" height="731" rx="8" fill="#16181d"/>
+<rect x="0" y="0" width="704" height="30" rx="8" fill="#1b1e24"/>
+<rect x="0" y="22" width="704" height="8" fill="#1b1e24"/>
+<circle cx="18" cy="15" r="5" fill="#e06c75"/><circle cx="36" cy="15" r="5" fill="#e5c07b"/><circle cx="54" cy="15" r="5" fill="#98c379"/>
+<text x="74" y="20" fill="#6b7280">g? — the mappings for the buffer you are in</text>
+<line x1="0" y1="30" x2="704" y2="30" stroke="#2c313a" stroke-width="1"/>
+<text x="16" y="61" fill="#e5c07b" xml:space="preserve">Data buffer</text>
+<text x="16" y="99" fill="#6b7280" xml:space="preserve">The data buffer is a normal modifiable buffer. Edit cells the way you edit any</text>
+<text x="16" y="118" fill="#6b7280" xml:space="preserve">text: `ciw`, visual block, `:%s/old/new/g`, macros, `dd` to delete a row, `o` to</text>
+<text x="16" y="137" fill="#6b7280" xml:space="preserve">add one. `u` undoes staged changes because it is Neovim's own undo. Writing the</text>
+<text x="16" y="156" fill="#6b7280" xml:space="preserve">buffer with `:w` turns the difference against the fetched snapshot into</text>
+<text x="16" y="175" fill="#6b7280" xml:space="preserve">`UPDATE`, `INSERT` and `DELETE` statements, shows them for confirmation and</text>
+<text x="16" y="194" fill="#6b7280" xml:space="preserve">applies them in one transaction.</text>
+<text x="16" y="232" fill="#6b7280" xml:space="preserve">Only navigation and inspection are mapped, so nothing shadows an editing key.</text>
+<text x="16" y="270" fill="#61afef" xml:space="preserve">  K   inspect the full cell value</text>
+<text x="16" y="289" fill="#61afef" xml:space="preserve">  gd  follow the foreign key under the cursor</text>
+<text x="16" y="308" fill="#61afef" xml:space="preserve">  gu  find rows referencing this one</text>
+<text x="16" y="327" fill="#61afef" xml:space="preserve">  gs  statistics for this column</text>
+<text x="16" y="346" fill="#61afef" xml:space="preserve">  gS  sort by this column</text>
+<text x="16" y="365" fill="#61afef" xml:space="preserve">  gf  filter rows with a WHERE expression</text>
+<text x="16" y="384" fill="#61afef" xml:space="preserve">  gF  clear the filter and sort</text>
+<text x="16" y="403" fill="#61afef" xml:space="preserve">  gt  transposed view of this row</text>
+<text x="16" y="422" fill="#61afef" xml:space="preserve">  gh  hide this column</text>
+<text x="16" y="441" fill="#61afef" xml:space="preserve">  gH  show all columns</text>
+<text x="16" y="460" fill="#61afef" xml:space="preserve">  gn  set this cell to SQL NULL</text>
+<text x="16" y="479" fill="#61afef" xml:space="preserve">  gy  yank cell, row or selection as...</text>
+<text x="16" y="498" fill="#61afef" xml:space="preserve">  gp  duplicate this row as a new INSERT</text>
+<text x="16" y="517" fill="#61afef" xml:space="preserve">  gr  reload from the database</text>
+<text x="16" y="536" fill="#61afef" xml:space="preserve">  gD  open the DDL for this table</text>
+<text x="16" y="555" fill="#61afef" xml:space="preserve">  ]c  next cell</text>
+<text x="16" y="574" fill="#61afef" xml:space="preserve">  [c  previous cell</text>
+<text x="16" y="593" fill="#61afef" xml:space="preserve">  ]r  next row</text>
+<text x="16" y="612" fill="#61afef" xml:space="preserve">  [r  previous row</text>
+<text x="16" y="631" fill="#61afef" xml:space="preserve">  ]p  next page</text>
+<text x="16" y="650" fill="#61afef" xml:space="preserve">  [p  previous page</text>
+<text x="16" y="669" fill="#61afef" xml:space="preserve">  g?  show this help</text>
+<text x="16" y="707" fill="#6b7280" xml:space="preserve">Global mappings are listed under `&lt;leader&gt;d`; see :help dbclient-keys.</text>
+</svg>

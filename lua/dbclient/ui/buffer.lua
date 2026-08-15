@@ -1,69 +1,105 @@
+--- Named scratch buffer helpers.
+---
+--- DBClient buffers are identified by name so reopening one focuses the
+--- existing buffer instead of hitting `E95: Buffer with this name already
+--- exists`.
+
 local M = {}
 
+--- Find a buffer by exact name or tail.
+---@param name string
+---@return integer|nil
 function M.find(name)
-  local bufnr = vim.fn.bufnr(name)
-  if bufnr ~= -1 and vim.api.nvim_buf_is_valid(bufnr) then
-    return bufnr
-  end
-
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-    local buf_name = vim.api.nvim_buf_get_name(buf)
-    if vim.api.nvim_buf_is_valid(buf) and (buf_name == name or vim.fn.fnamemodify(buf_name, ":t") == name) then
-      return buf
+    if vim.api.nvim_buf_is_valid(buf) then
+      local buf_name = vim.api.nvim_buf_get_name(buf)
+      if buf_name == name or vim.fn.fnamemodify(buf_name, ":t") == name then
+        return buf
+      end
     end
   end
 end
 
-function M.set_name(buf, name)
+--- Create a scratch buffer with a unique name.
+---@param name string
+---@param opts? { filetype?: string, modifiable?: boolean, buftype?: string, bufhidden?: string }
+---@return integer bufnr
+function M.scratch(name, opts)
+  opts = opts or {}
+
   local existing = M.find(name)
-  if existing == buf then
-    return buf
-  elseif existing then
-    vim.api.nvim_win_set_buf(0, existing)
+  if existing and vim.api.nvim_buf_is_valid(existing) then
     return existing
   end
 
-  local ok, err = pcall(vim.api.nvim_buf_set_name, buf, name)
-  if not ok then
-    local recovered = M.find(name)
-    if recovered then
-      vim.api.nvim_win_set_buf(0, recovered)
-      return recovered
-    end
-    error(err)
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  pcall(vim.api.nvim_buf_set_name, bufnr, name)
+  vim.bo[bufnr].buftype = opts.buftype or "nofile"
+  vim.bo[bufnr].bufhidden = opts.bufhidden or "hide"
+  vim.bo[bufnr].swapfile = false
+  vim.bo[bufnr].modifiable = opts.modifiable ~= false
+  if opts.filetype then
+    vim.bo[bufnr].filetype = opts.filetype
   end
-
-  return buf
+  return bufnr
 end
 
-function M.open_named(name, command)
-  local existing = M.find(name)
+--- Replace a buffer's contents, temporarily lifting `modifiable`.
+---@param bufnr integer
+---@param lines string[]
+function M.set_lines(bufnr, lines)
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return
+  end
+  local was_modifiable = vim.bo[bufnr].modifiable
+  vim.bo[bufnr].modifiable = true
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+  vim.bo[bufnr].modifiable = was_modifiable
+  vim.bo[bufnr].modified = false
+end
+
+--- Show a buffer, reusing its window when one is already open.
+---@param bufnr integer
+---@param command string  window command, e.g. `botright 14split`
+---@return integer winid
+function M.show(bufnr, command)
+  for _, win in ipairs(vim.api.nvim_list_wins()) do
+    if vim.api.nvim_win_get_buf(win) == bufnr then
+      vim.api.nvim_set_current_win(win)
+      return win
+    end
+  end
+
   vim.cmd(command)
   local win = vim.api.nvim_get_current_win()
-  local buf = existing or vim.api.nvim_get_current_buf()
-
-  if existing then
-    vim.api.nvim_win_set_buf(win, existing)
-  end
-
-  return buf, win
+  vim.api.nvim_win_set_buf(win, bufnr)
+  return win
 end
 
-function M.open_or_create(name, command)
-  local existing = M.find(name)
-  if existing then
-    vim.cmd(command)
-    local win = vim.api.nvim_get_current_win()
-    local created = vim.api.nvim_get_current_buf()
-    vim.api.nvim_win_set_buf(win, existing)
-    if created ~= existing and vim.api.nvim_buf_get_name(created) == "" then
-      pcall(vim.api.nvim_buf_delete, created, { force = true })
-    end
-    return existing, win, true
+--- Focus an existing window showing `bufnr`.
+---@param bufnr integer|nil
+---@return boolean focused
+function M.focus(bufnr)
+  if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+    return false
   end
+  for _, win in ipairs(vim.api.nvim_list_wins()) do
+    if vim.api.nvim_win_get_buf(win) == bufnr then
+      vim.api.nvim_set_current_win(win)
+      return true
+    end
+  end
+  return false
+end
 
-  vim.cmd(command)
-  return vim.api.nvim_get_current_buf(), vim.api.nvim_get_current_win(), false
+--- Close every window showing `bufnr`, keeping the buffer alive.
+---@param bufnr integer
+function M.hide(bufnr)
+  for _, win in ipairs(vim.api.nvim_list_wins()) do
+    if vim.api.nvim_win_get_buf(win) == bufnr and #vim.api.nvim_list_wins() > 1 then
+      pcall(vim.api.nvim_win_close, win, false)
+    end
+  end
 end
 
 return M

@@ -1,637 +1,979 @@
-local config = require("dbclient.config")
+--- The editable data buffer.
+---
+--- This is a plain modifiable buffer holding a rendered grid. Editing is
+--- ordinary Neovim editing — `ciw`, visual block, `:%s/`, macros, `dd`, `o`,
+--- and `u` for undo — and `:w` turns whatever the buffer now says into the
+--- `UPDATE`, `INSERT` and `DELETE` statements needed to get the database there.
+---
+--- Row identity survives arbitrary editing because each data line carries an
+--- extmark. Extmarks move with their line, disappear when the line is deleted
+--- and come back on undo, which is exactly the bookkeeping a diff needs.
+
 local buffer = require("dbclient.ui.buffer")
+local client = require("dbclient.core.client")
+local config = require("dbclient.config")
+local diff = require("dbclient.data.diff")
+local grid = require("dbclient.ui.grid")
+local help = require("dbclient.ui.help")
 local highlights = require("dbclient.ui.highlights")
-local state = require("dbclient.state")
+local keymap = require("dbclient.keymap")
+local session = require("dbclient.session")
+local value_inspector = require("dbclient.ui.value")
 local window = require("dbclient.ui.window")
+local winbar = require("dbclient.ui.winbar")
 
 local M = {
-  buf = nil,
-  view = nil,
-  edit_popup = nil,
-  transaction_popup = nil,
-  transaction = nil,
+  --- bufnr -> view
+  views = {},
 }
 
-local function stringify(value)
-  if value == nil or value == vim.NIL then
-    return "NULL"
-  end
-  return tostring(value)
+local HEADER_LINES = 3
+local ns_rows = vim.api.nvim_create_namespace("dbclient-data-rows")
+
+--- The view attached to a buffer.
+---@param bufnr integer|nil
+---@return table|nil
+function M.view(bufnr)
+  return M.views[bufnr or vim.api.nvim_get_current_buf()]
 end
 
-local function trim(value)
-  return (value:gsub("^%s+", ""):gsub("%s+$", ""))
+local function notify(message, level)
+  vim.notify("DBClient: " .. message, level or vim.log.levels.INFO)
 end
 
-local function shorten(value, width)
-  value = stringify(value)
-  if #value <= width then
-    return value
-  end
-  return value:sub(1, math.max(1, width - 1)) .. "~"
-end
-
-local function change_count()
-  return M.transaction and #M.transaction.order or 0
-end
-
-local function widths(columns, rows)
-  local max_cell = config.get().ui.max_cell_width
-  local sizes = {}
-
-  for index, column in ipairs(columns) do
-    sizes[index] = math.min(max_cell, #column)
-  end
-
-  for _, row in ipairs(rows) do
-    for index, value in ipairs(row) do
-      sizes[index] = math.min(max_cell, math.max(sizes[index] or 0, #stringify(value)))
-    end
-  end
-
-  return sizes
-end
-
-local function pad(value, width)
-  value = stringify(value)
-  if #value > width then
-    value = value:sub(1, math.max(1, width - 1)) .. "~"
-  end
-  return value .. string.rep(" ", width - #value)
-end
-
-local function primary_columns(columns_meta)
-  local primary = {}
-  for _, column in ipairs(columns_meta) do
-    if column.key == "PRI" then
-      table.insert(primary, column.name)
-    end
-  end
-  return primary
-end
-
-local function row_map(view, row)
-  local values = {}
-  for index, column in ipairs(view.columns) do
-    values[column] = row[index]
-  end
-  return values
-end
-
-local function pk_for_row(view, row)
-  local values = row_map(view, row)
-  local pk = {}
-  for _, column in ipairs(view.primary) do
-    pk[column] = values[column]
-  end
-  return pk
-end
-
-local function original_pk_for_row(view, row, row_index)
-  local pk = pk_for_row(view, row)
-  local transaction = M.transaction
-  if not transaction then
-    return pk
-  end
-
-  for _, key in ipairs(transaction.order) do
-    local change = transaction.changes[key]
-    if change and change.row_index == row_index then
-      for _, column in ipairs(view.primary) do
-        if change.column == column then
-          pk[column] = change.old_value
-        end
-      end
-    end
-  end
-
-  return pk
-end
-
-local function render(view)
-  local lines = {
-    view.schema
-      .. "."
-      .. view.table
-      .. "  rows:"
-      .. #view.rows
-      .. "  limit:"
-      .. view.limit
-      .. "  pending:"
-      .. change_count(),
-  }
-  local sizes = widths(view.columns, view.rows)
-  local spans = {}
-  local header = {}
-  local separator = {}
-  local col = 1
-
-  for index, column in ipairs(view.columns) do
-    header[index] = pad(column, sizes[index])
-    separator[index] = string.rep("-", sizes[index])
-    spans[index] = { start = col, finish = col + sizes[index] - 1 }
-    col = col + sizes[index] + 3
-  end
-
-  table.insert(lines, table.concat(header, " | "))
-  table.insert(lines, table.concat(separator, "-+-"))
-
-  for _, row in ipairs(view.rows) do
-    local cells = {}
-    for index in ipairs(view.columns) do
-      cells[index] = pad(row[index], sizes[index])
-    end
-    table.insert(lines, table.concat(cells, " | "))
-  end
-
-  view.spans = spans
-  return lines
-end
-
-local function current_cell()
-  local view = M.view
-  if not view then
-    return nil
-  end
-
-  local row_nr, col_nr = unpack(vim.api.nvim_win_get_cursor(0))
-  local data_index = row_nr - 3
-  if data_index < 1 or data_index > #view.rows then
-    return nil
-  end
-
-  col_nr = col_nr + 1
-  for index, span in ipairs(view.spans) do
-    if col_nr >= span.start and col_nr <= span.finish then
-      return {
-        row_index = data_index,
-        column_index = index,
-        column = view.columns[index],
-        row = view.rows[data_index],
-        span = span,
-      }
-    end
-  end
-end
-
-local function move_to_cell(row_index, column_index)
-  local view = M.view
-  if not view then
-    return
-  end
-  row_index = math.max(1, math.min(row_index, #view.rows))
-  column_index = math.max(1, math.min(column_index, #view.columns))
-  local span = view.spans[column_index]
-  vim.api.nvim_win_set_cursor(0, { row_index + 3, span.start - 1 })
-end
-
-local function redraw_view(row_index, column_index)
-  if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) or not M.view then
-    return
-  end
-
-  vim.bo[M.buf].modifiable = true
-  local lines = render(M.view)
-  vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, lines)
-  vim.bo[M.buf].modifiable = false
-  highlights.table(M.buf, #lines)
-
-  if row_index and column_index then
-    move_to_cell(row_index, column_index)
-  end
-end
-
-local function close_edit_popup()
-  local popup = M.edit_popup
-  M.edit_popup = nil
-
-  if popup and popup.win and vim.api.nvim_win_is_valid(popup.win) then
-    vim.api.nvim_win_close(popup.win, true)
-  end
-
-  if popup and popup.buf and vim.api.nvim_buf_is_valid(popup.buf) then
-    pcall(vim.api.nvim_buf_delete, popup.buf, { force = true })
-  end
-end
-
-local function close_transaction_popup()
-  local popup = M.transaction_popup
-  M.transaction_popup = nil
-
-  if popup and popup.win and vim.api.nvim_win_is_valid(popup.win) then
-    vim.api.nvim_win_close(popup.win, true)
-  end
-
-  if popup and popup.buf and vim.api.nvim_buf_is_valid(popup.buf) then
-    pcall(vim.api.nvim_buf_delete, popup.buf, { force = true })
-  end
-end
-
-local function leave_insert_mode()
-  if vim.fn.mode():match("^[iR]") then
-    vim.cmd("stopinsert")
-  end
-end
-
-local function input_value(input)
-  return input == "NULL" and vim.NIL or input
-end
-
-local function same_value(left, right)
-  return stringify(left) == stringify(right)
-end
-
-local function ensure_transaction()
-  if M.transaction then
-    return M.transaction
-  end
-
-  M.transaction = {
-    schema = M.view.schema,
-    table = M.view.table,
-    order = {},
-    changes = {},
-  }
-  vim.notify("DBClient: transaction started", vim.log.levels.INFO)
-  return M.transaction
-end
-
-local function remove_pending_change(transaction, key)
-  transaction.changes[key] = nil
-  for index, existing in ipairs(transaction.order) do
-    if existing == key then
-      table.remove(transaction.order, index)
-      break
-    end
-  end
-
-  if #transaction.order == 0 then
-    M.transaction = nil
-  end
-end
-
-local function track_cell_value(cell, input)
-  if input == nil then
-    return
-  end
-
-  local transaction = ensure_transaction()
-  local key = cell.row_index .. ":" .. cell.column_index
-  local change = transaction.changes[key]
-  local old_value = change and change.old_value or cell.row[cell.column_index]
-  local new_value = input_value(input)
-
-  if same_value(old_value, new_value) then
-    cell.row[cell.column_index] = old_value
-    if change then
-      remove_pending_change(transaction, key)
-    end
-    redraw_view(cell.row_index, cell.column_index)
-    return
-  end
-
-  if not change then
-    table.insert(transaction.order, key)
-  end
-
-  transaction.changes[key] = {
-    row_index = cell.row_index,
-    column_index = cell.column_index,
-    column = cell.column,
-    old_value = old_value,
-    new_value = new_value,
-    pk = original_pk_for_row(M.view, cell.row, cell.row_index),
-  }
-
-  cell.row[cell.column_index] = new_value
-  redraw_view(cell.row_index, cell.column_index)
-end
-
-local function apply_cell_value(cell, input)
-  if input == nil then
-    return
-  end
-
-  local value = input_value(input)
-  local ok, err = pcall(state.update_cell, M.view.schema, M.view.table, cell.column, value, pk_for_row(M.view, cell.row))
-  if not ok then
-    vim.notify("DBClient update failed: " .. err, vim.log.levels.ERROR)
-    return
-  end
-
-  M.open(M.view.schema, M.view.table, M.view.limit)
-end
-
-local function pending_updates()
-  local updates = {}
-  local transaction = M.transaction
-  if not transaction then
-    return updates
-  end
-
-  for _, key in ipairs(transaction.order) do
-    local change = transaction.changes[key]
-    if change then
-      table.insert(updates, {
-        schema = transaction.schema,
-        table = transaction.table,
-        column = change.column,
-        value = change.new_value,
-        pk = change.pk,
-      })
-    end
-  end
-
-  return updates
-end
-
-local function commit_transaction()
-  local updates = pending_updates()
-  if #updates == 0 then
-    close_transaction_popup()
-    vim.notify("DBClient: no pending transaction", vim.log.levels.INFO)
-    return
-  end
-
-  local schema = M.transaction.schema
-  local table_name = M.transaction.table
-  local limit = M.view.limit
-  local ok, err = pcall(state.update_cells, updates)
-  if not ok then
-    vim.notify("DBClient transaction failed: " .. err, vim.log.levels.ERROR)
-    return
-  end
-
-  M.transaction = nil
-  close_transaction_popup()
-  M.open(schema, table_name, limit)
-end
-
-local function rollback_transaction()
-  local transaction = M.transaction
-  if not transaction then
-    close_transaction_popup()
-    return
-  end
-
-  for _, key in ipairs(transaction.order) do
-    local change = transaction.changes[key]
-    if change and M.view.rows[change.row_index] then
-      M.view.rows[change.row_index][change.column_index] = change.old_value
-    end
-  end
-
-  M.transaction = nil
-  close_transaction_popup()
-  redraw_view()
-  vim.notify("DBClient: transaction rolled back", vim.log.levels.INFO)
-end
-
-local function open_edit_popup(cell, on_submit)
-  close_edit_popup()
-
-  local old = stringify(cell.row[cell.column_index])
-  local title = " " .. cell.column .. " old: " .. shorten(old, 24) .. " "
-  local width = math.max(32, math.min(72, math.max(#old, #cell.column) + 8))
-  local buf = vim.api.nvim_create_buf(false, true)
-  local win = vim.api.nvim_open_win(buf, true, {
-    relative = "cursor",
-    row = 1,
-    col = 0,
-    width = width,
-    height = 1,
-    style = "minimal",
-    border = "rounded",
-    title = title,
-    title_pos = "left",
-  })
-
-  M.edit_popup = { buf = buf, win = win }
-  vim.bo[buf].buftype = "nofile"
-  vim.bo[buf].bufhidden = "wipe"
-  vim.bo[buf].swapfile = false
-  vim.bo[buf].filetype = "dbclient-cell"
-  vim.wo[win].wrap = false
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "" })
-
-  local submitted = false
-  local function submit()
-    if submitted then
-      return
-    end
-    submitted = true
-
-    local was_insert = vim.fn.mode():match("^[iR]") ~= nil
-    leave_insert_mode()
-    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-    local input = trim(lines[1] or "")
-    close_edit_popup()
-    on_submit(cell, input)
-    if was_insert then
-      vim.schedule(leave_insert_mode)
-    end
-  end
-
-  local function cancel()
-    leave_insert_mode()
-    close_edit_popup()
-    vim.schedule(leave_insert_mode)
-  end
-
-  vim.keymap.set("n", "<CR>", submit, { buffer = buf, silent = true })
-  vim.keymap.set("i", "<CR>", submit, { buffer = buf, silent = true })
-  vim.keymap.set("n", "q", cancel, { buffer = buf, silent = true })
-  vim.keymap.set("n", "<Esc>", cancel, { buffer = buf, silent = true })
-  vim.keymap.set("i", "<Esc>", cancel, { buffer = buf, silent = true })
-
-  vim.api.nvim_win_set_cursor(win, { 1, 0 })
-  vim.cmd("startinsert")
-end
-
-local function transaction_lines()
-  local transaction = M.transaction
-  local lines = { "pending cell changes", "" }
-
-  if not transaction or #transaction.order == 0 then
-    table.insert(lines, "no pending changes")
+-- ---------------------------------------------------------------------------
+-- Rendering
+-- ---------------------------------------------------------------------------
+
+local function header_text(view)
+  local parts = { ("%s.%s"):format(view.schema, view.table) }
+
+  local first = (view.offset or 0) + 1
+  local last = (view.offset or 0) + #view.rows
+  if view.total then
+    table.insert(parts, ("rows %d-%d of %d"):format(first, last, view.total))
   else
-    for index, key in ipairs(transaction.order) do
-      local change = transaction.changes[key]
-      if change then
-        table.insert(
-          lines,
-          index
-            .. ". row "
-            .. change.row_index
-            .. " "
-            .. change.column
-            .. ": "
-            .. stringify(change.old_value)
-            .. " -> "
-            .. stringify(change.new_value)
+    table.insert(parts, ("rows %d-%d"):format(first, last))
+  end
+
+  if view.truncated then
+    table.insert(parts, "more available")
+  end
+  if view.filter and view.filter ~= "" then
+    table.insert(parts, ("where %s"):format(view.filter))
+  end
+  if view.sort and #view.sort > 0 then
+    local terms = {}
+    for _, term in ipairs(view.sort) do
+      table.insert(terms, ("%s %s"):format(term.column, term.dir))
+    end
+    table.insert(parts, "order by " .. table.concat(terms, ", "))
+  end
+  if next(view.hidden or {}) then
+    table.insert(parts, ("%d hidden"):format(vim.tbl_count(view.hidden)))
+  end
+  if #view.primary == 0 then
+    table.insert(parts, "no primary key: read-only")
+  end
+
+  return table.concat(parts, "  ·  ")
+end
+
+--- Draw the grid and place one extmark per row.
+---@param view table
+function M.render(view)
+  local bufnr = view.bufnr
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return
+  end
+
+  local sizes = grid.widths(view.columns, view.rows, view.hidden)
+  local spans = grid.spans(view.columns, sizes, view.hidden)
+  local header, underline = grid.render_header(view.columns, sizes, view.hidden)
+
+  local lines = { header_text(view), header, underline }
+  local nulls = {}
+  local rendered_rows = {}
+
+  for index, row in ipairs(view.rows) do
+    local line, row_nulls = grid.render_row(row, view.columns, sizes, view.hidden)
+    table.insert(lines, line)
+    nulls[index] = row_nulls
+
+    -- Remember the exact rendered text per column so the diff can tell an
+    -- untouched cell from an edited one even when it was truncated.
+    local per_column = {}
+    for column_index, column in ipairs(view.columns) do
+      if not (view.hidden and view.hidden[column_index]) then
+        per_column[column_index] = vim.trim(
+          grid.pad(
+            (grid.display(row[column_index], column)),
+            sizes[column_index] or 0,
+            grid.alignment(column.class)
+          )
         )
       end
     end
+    rendered_rows[index] = per_column
   end
 
-  table.insert(lines, "")
-  table.insert(lines, "c commit  r rollback  q cancel")
-  return lines
-end
+  view.sizes = sizes
+  view.spans = spans
 
-function M.open_transaction_popup()
-  close_transaction_popup()
+  vim.bo[bufnr].modifiable = true
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+  vim.bo[bufnr].modified = false
 
-  local lines = transaction_lines()
-  local width = 40
-  for _, line in ipairs(lines) do
-    width = math.max(width, #line + 2)
+  -- Snapshot and marks are rebuilt together so their ids always agree.
+  vim.api.nvim_buf_clear_namespace(bufnr, ns_rows, 0, -1)
+  view.snapshot = {}
+  for index, row in ipairs(view.rows) do
+    view.snapshot[index] = { values = row, rendered = rendered_rows[index] }
+    vim.api.nvim_buf_set_extmark(bufnr, ns_rows, HEADER_LINES + index - 1, 0, {
+      id = index,
+      invalidate = true,
+      right_gravity = false,
+    })
   end
-  width = math.min(width, math.max(20, vim.o.columns - 4))
-  local height = math.min(#lines, math.max(1, vim.o.lines - 4))
-  local buf = vim.api.nvim_create_buf(false, true)
-  local win = vim.api.nvim_open_win(buf, true, {
-    relative = "editor",
-    row = math.max(0, math.floor((vim.o.lines - height) / 2) - 1),
-    col = math.max(0, math.floor((vim.o.columns - width) / 2)),
-    width = width,
-    height = height,
-    style = "minimal",
-    border = "rounded",
-    title = " transaction ",
-    title_pos = "left",
+
+  highlights.grid(bufnr, {
+    header_line = 1,
+    first_row = HEADER_LINES,
+    spans = spans,
+    columns = view.columns,
+    rows = #view.rows,
+    nulls = nulls,
+    stripes = config.get().ui.row_stripes,
   })
+  highlights.lines(bufnr, { { line = 0, group = "DBClientHeader" } }, highlights.ns_virt)
 
-  M.transaction_popup = { buf = buf, win = win }
-  vim.bo[buf].buftype = "nofile"
-  vim.bo[buf].bufhidden = "wipe"
-  vim.bo[buf].swapfile = false
-  vim.bo[buf].filetype = "dbclient-transaction"
-  vim.bo[buf].modifiable = true
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.bo[buf].modifiable = false
-  vim.wo[win].wrap = false
-
-  vim.keymap.set("n", "c", commit_transaction, { buffer = buf, silent = true })
-  vim.keymap.set("n", "r", rollback_transaction, { buffer = buf, silent = true })
-  vim.keymap.set("n", "q", close_transaction_popup, { buffer = buf, silent = true })
-  vim.keymap.set("n", "<Esc>", close_transaction_popup, { buffer = buf, silent = true })
+  M.render_fk_hints(view)
+  vim.b[bufnr].dbclient_header = header
+  -- Bumped on every draw so callers (and tests) can tell a rendered buffer
+  -- from one that has rows fetched but not yet drawn.
+  view.generation = (view.generation or 0) + 1
 end
 
-function M.move_column(delta)
-  local cell = current_cell()
-  if cell then
-    move_to_cell(cell.row_index, cell.column_index + delta)
-  end
-end
-
-function M.move_row(delta)
-  local cell = current_cell()
-  if cell then
-    move_to_cell(cell.row_index + delta, cell.column_index)
-  end
-end
-
-local function editable_cell()
-  local cell = current_cell()
-  if not cell then
-    vim.notify("DBClient: move onto a data cell first", vim.log.levels.WARN)
-    return nil
-  end
-
-  if #M.view.primary == 0 then
-    vim.notify("DBClient: table has no primary key; refusing blind update", vim.log.levels.WARN)
-    return nil
-  end
-
-  return cell
-end
-
-function M.edit_cell()
-  local cell = editable_cell()
-  if cell then
-    open_edit_popup(cell, track_cell_value)
-  end
-end
-
-function M.edit_cell_immediate()
-  if change_count() > 0 then
-    vim.notify("DBClient: commit or rollback the pending transaction before an immediate update", vim.log.levels.WARN)
+--- Show `→ table.column` next to foreign key columns in the header.
+---@param view table
+function M.render_fk_hints(view)
+  if not config.get().ui.virtual_fk or vim.tbl_isempty(view.fk or {}) then
     return
   end
 
-  local cell = editable_cell()
-  if cell then
-    open_edit_popup(cell, apply_cell_value)
-  end
-end
-
-function M.refresh()
-  if M.view then
-    if change_count() > 0 then
-      vim.notify("DBClient: commit or rollback the pending transaction before refreshing", vim.log.levels.WARN)
-      return
+  local chunks = {}
+  for index, column in ipairs(view.columns) do
+    local reference = view.fk[column.name]
+    if reference and not (view.hidden and view.hidden[index]) then
+      table.insert(chunks, ("%s→%s.%s"):format(column.name, reference.ref_table, reference.ref_column))
     end
-    M.open(M.view.schema, M.view.table, M.view.limit)
+  end
+
+  if #chunks > 0 then
+    pcall(vim.api.nvim_buf_set_extmark, view.bufnr, highlights.ns_virt, 1, 0, {
+      virt_text = { { "  " .. table.concat(chunks, "  "), "DBClientFk" } },
+      virt_text_pos = "eol",
+    })
   end
 end
 
-function M.open(schema, table_name, limit)
-  if change_count() > 0 then
-    vim.notify("DBClient: commit or rollback the pending transaction before opening data", vim.log.levels.WARN)
-    return
+-- ---------------------------------------------------------------------------
+-- Cursor helpers
+-- ---------------------------------------------------------------------------
+
+--- Describe the cell under the cursor.
+---@return table|nil
+function M.current_cell()
+  local view = M.view()
+  if not view then
+    return nil
   end
 
-  limit = limit or config.get().ui.preview_limit
-  local result = state.preview(schema, table_name, limit)
-  local columns_meta = state.columns(schema, table_name, false)
+  local position = vim.api.nvim_win_get_cursor(0)
+  local row_index = position[1] - HEADER_LINES
+  if row_index < 1 or row_index > #view.rows then
+    return nil
+  end
 
-  M.view = {
-    schema = schema,
-    table = table_name,
-    limit = limit,
-    columns = result.columns or {},
-    rows = result.rows or {},
-    primary = primary_columns(columns_meta),
-    spans = {},
+  local column_index = grid.column_at(view.spans, position[2]) or 1
+  return {
+    view = view,
+    row_index = row_index,
+    column_index = column_index,
+    column = view.columns[column_index],
+    row = view.rows[row_index],
+    value = view.rows[row_index] and view.rows[row_index][column_index],
+  }
+end
+
+local function move_to(view, row_index, column_index)
+  row_index = math.max(1, math.min(row_index, #view.rows))
+  local visible = diff.visible_columns(view.columns, view.hidden)
+  if #visible == 0 then
+    return
+  end
+  -- Clamp onto a visible column.
+  if view.hidden and view.hidden[column_index] then
+    column_index = visible[1]
+  end
+  column_index = math.max(1, math.min(column_index, #view.columns))
+  local span = view.spans[column_index] or view.spans[visible[1]]
+  pcall(vim.api.nvim_win_set_cursor, 0, { HEADER_LINES + row_index, span and span.start or 0 })
+end
+
+--- Column index adjacent to `from`, skipping hidden columns.
+local function step_column(view, from, delta)
+  local visible = diff.visible_columns(view.columns, view.hidden)
+  for position, index in ipairs(visible) do
+    if index == from then
+      local target = visible[position + delta]
+      return target or index
+    end
+  end
+  return visible[1]
+end
+
+function M.next_cell(delta)
+  local cell = M.current_cell()
+  if cell then
+    move_to(cell.view, cell.row_index, step_column(cell.view, cell.column_index, delta))
+  end
+end
+
+function M.next_row(delta)
+  local cell = M.current_cell()
+  if cell then
+    move_to(cell.view, cell.row_index + delta, cell.column_index)
+  end
+end
+
+-- ---------------------------------------------------------------------------
+-- Loading
+-- ---------------------------------------------------------------------------
+
+local function buffer_name(schema, table_name, session_name)
+  return ("dbclient://%s/%s.%s"):format(session_name, schema, table_name)
+end
+
+--- Fetch rows and metadata for a view, then draw it.
+--- Must run inside `client.async`.
+---@param view table
+local function load(view)
+  local params = {
+    schema = view.schema,
+    table = view.table,
+    limit = view.limit,
+    offset = view.offset,
+    filter = view.filter,
+    order = view.sort,
   }
 
-  if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
-    vim.cmd("enew")
-    M.buf = vim.api.nvim_get_current_buf()
-  elseif not window.focus(M.buf) then
-    vim.cmd("split")
-    vim.api.nvim_win_set_buf(0, M.buf)
+  local result = session.preview(view.session_id, params)
+  view.columns = result.columns
+  view.rows = result.rows
+  view.truncated = result.truncated
+  view.elapsed_ms = result.elapsed_ms
+
+  view.primary = session.primary_key(view.session_id, view.schema, view.table)
+
+  view.fk = {}
+  local ok, keys = pcall(session.foreign_keys, view.session_id, view.schema, view.table)
+  if ok then
+    for _, key in ipairs(keys) do
+      view.fk[key.column] = key
+    end
   end
 
-  vim.bo[M.buf].buftype = "nofile"
-  vim.bo[M.buf].bufhidden = "hide"
-  vim.bo[M.buf].swapfile = false
-  vim.bo[M.buf].filetype = "dbclient-data"
-  M.buf = buffer.set_name(M.buf, "DBClient Data - " .. schema .. "." .. table_name)
-  vim.bo[M.buf].modifiable = true
-  local lines = render(M.view)
-  vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, lines)
-  vim.bo[M.buf].modifiable = false
-  vim.wo.cursorline = true
-  vim.wo.cursorcolumn = true
-  highlights.table(M.buf, #lines)
-
-  vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = M.buf, silent = true })
-  vim.keymap.set("n", "r", M.refresh, { buffer = M.buf, silent = true })
-  vim.keymap.set("n", "i", M.edit_cell, { buffer = M.buf, silent = true })
-  vim.keymap.set("n", "I", M.edit_cell_immediate, { buffer = M.buf, silent = true })
-  vim.keymap.set("n", "E", M.edit_cell_immediate, { buffer = M.buf, silent = true })
-  vim.keymap.set("n", "T", M.open_transaction_popup, { buffer = M.buf, silent = true })
-  vim.keymap.set("n", "]c", function() M.move_column(1) end, { buffer = M.buf, silent = true })
-  vim.keymap.set("n", "[c", function() M.move_column(-1) end, { buffer = M.buf, silent = true })
-  vim.keymap.set("n", "]r", function() M.move_row(1) end, { buffer = M.buf, silent = true })
-  vim.keymap.set("n", "[r", function() M.move_row(-1) end, { buffer = M.buf, silent = true })
-  vim.keymap.set("n", "F", window.toggle_fullscreen, { buffer = M.buf, silent = true })
-
-  if #M.view.rows > 0 and #M.view.columns > 0 then
-    move_to_cell(1, 1)
-  end
+  -- Row counts are a separate round trip so a slow `count(*)` never delays the
+  -- rows themselves.
+  M.render(view)
+  vim.schedule(function()
+    client.async(function()
+      local total = session.count(view.session_id, {
+        schema = view.schema,
+        table = view.table,
+        filter = view.filter,
+      })
+      if vim.api.nvim_buf_is_valid(view.bufnr) and M.views[view.bufnr] == view then
+        view.total = total
+        if not vim.bo[view.bufnr].modified then
+          local line = header_text(view)
+          vim.bo[view.bufnr].modifiable = true
+          vim.api.nvim_buf_set_lines(view.bufnr, 0, 1, false, { line })
+          vim.bo[view.bufnr].modified = false
+        end
+      end
+    end, function() end)
+  end)
 end
+
+--- Open a table in a data buffer.
+---@param opts { session_id?: string, schema: string, table: string, limit?: integer, offset?: integer, filter?: string, sort?: table[], split?: string }
+function M.open(opts)
+  local target = session.get(opts.session_id)
+  if not target then
+    notify("no active connection", vim.log.levels.WARN)
+    return
+  end
+
+  local name = buffer_name(opts.schema, opts.table, target.name)
+  local bufnr = buffer.scratch(name, { modifiable = true, buftype = "acwrite" })
+  local existing = M.views[bufnr]
+
+  local view = existing
+    or {
+      bufnr = bufnr,
+      session_id = target.id,
+      schema = opts.schema,
+      table = opts.table,
+      rows = {},
+      columns = {},
+      primary = {},
+      hidden = {},
+      sort = {},
+      snapshot = {},
+      fk = {},
+    }
+
+  view.session_id = target.id
+  view.limit = opts.limit or view.limit or config.get().ui.preview_limit
+  view.offset = opts.offset or view.offset or 0
+  if opts.filter ~= nil then
+    view.filter = opts.filter ~= "" and opts.filter or nil
+  end
+  if opts.sort ~= nil then
+    view.sort = opts.sort
+  end
+
+  M.views[bufnr] = view
+  vim.bo[bufnr].filetype = "dbclient-data"
+
+  buffer.show(bufnr, opts.split or "botright split")
+  vim.wo.cursorline = true
+  vim.wo.wrap = false
+  winbar.bind(bufnr, target.id)
+
+  if not existing then
+    M.attach(view)
+  end
+
+  client.async(function()
+    load(view)
+    if #view.rows > 0 then
+      move_to(view, 1, diff.visible_columns(view.columns, view.hidden)[1] or 1)
+    end
+  end, function(err)
+    notify(err, vim.log.levels.ERROR)
+  end)
+end
+
+--- Re-fetch the current page.
+function M.reload()
+  local view = M.view()
+  if not view then
+    return
+  end
+  if vim.bo[view.bufnr].modified then
+    return notify("buffer has unsaved changes; :w or :e! first", vim.log.levels.WARN)
+  end
+  client.async(function()
+    local position = vim.api.nvim_win_get_cursor(0)
+    load(view)
+    pcall(vim.api.nvim_win_set_cursor, 0, position)
+  end, function(err)
+    notify(err, vim.log.levels.ERROR)
+  end)
+end
+
+-- ---------------------------------------------------------------------------
+-- Writing
+-- ---------------------------------------------------------------------------
+
+--- Read the buffer back into `{ id, cells }` entries.
+---
+--- The extmark on each line gives the original row id; a line without one is a
+--- new row. Invalidated marks belong to deleted lines and are skipped.
+---@param view table
+---@return table[] entries
+function M.read_entries(view)
+  local bufnr = view.bufnr
+  local lines = vim.api.nvim_buf_get_lines(bufnr, HEADER_LINES, -1, false)
+
+  local marks = vim.api.nvim_buf_get_extmarks(bufnr, ns_rows, 0, -1, { details = true })
+  local id_by_line = {}
+  for _, mark in ipairs(marks) do
+    local id, line, _, details = mark[1], mark[2], mark[3], mark[4]
+    if not (details and details.invalid) then
+      -- If two marks land on one line (an edit merged rows), the first wins and
+      -- the other counts as deleted.
+      if id_by_line[line] == nil then
+        id_by_line[line] = id
+      end
+    end
+  end
+
+  local entries = {}
+  for offset, line in ipairs(lines) do
+    if vim.trim(line) ~= "" then
+      table.insert(entries, {
+        id = id_by_line[HEADER_LINES + offset - 1],
+        cells = grid.parse_row(line),
+      })
+    end
+  end
+  return entries
+end
+
+--- Compute the pending change set without touching the database.
+---@param view table
+---@return table
+function M.pending(view)
+  return diff.compute({
+    schema = view.schema,
+    table = view.table,
+    columns = view.columns,
+    hidden = view.hidden,
+    primary = view.primary,
+    snapshot = view.snapshot,
+    entries = M.read_entries(view),
+  })
+end
+
+--- Ask the user to confirm a change set, showing both a summary and the exact
+--- SQL the core would run.
+---@param view table
+---@param result table
+---@param on_confirm fun()
+local function confirm(view, result, on_confirm)
+  client.async(function()
+    local statements = {}
+    local ok, response = pcall(
+      client.call,
+      "preview-changes",
+      { changes = result.changes },
+      view.session_id
+    )
+    if ok then
+      statements = response.statements or {}
+    end
+
+    local lines = diff.describe(result, ("%s.%s"):format(view.schema, view.table))
+    if #statements > 0 then
+      table.insert(lines, "")
+      table.insert(lines, "SQL:")
+      for _, statement in ipairs(statements) do
+        for _, line in ipairs(vim.split(statement, "\n")) do
+          table.insert(lines, "  " .. line)
+        end
+      end
+    end
+
+    local target = session.get(view.session_id)
+    if target and target.spec and target.spec.access == "sandbox" then
+      table.insert(lines, "")
+      table.insert(lines, "sandbox connection: this will be rolled back")
+    end
+
+    table.insert(lines, "")
+    table.insert(lines, "<CR> apply    q cancel")
+
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.bo[bufnr].bufhidden = "wipe"
+    vim.bo[bufnr].filetype = "sql"
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+    vim.bo[bufnr].modifiable = false
+
+    local winid = window.float(bufnr, {
+      title = "apply changes",
+      max_width = 0.9,
+      max_height = 0.7,
+      cursorline = false,
+    })
+
+    highlights.lines(bufnr, { { line = 0, group = "DBClientHeader" } })
+    window.close_keys(bufnr, winid)
+    vim.keymap.set("n", "<CR>", function()
+      window.close(winid, bufnr)
+      on_confirm()
+    end, { buffer = bufnr, silent = true, nowait = true })
+  end, function(err)
+    notify(err, vim.log.levels.ERROR)
+  end)
+end
+
+--- `:w` handler.
+function M.write()
+  local view = M.view()
+  if not view then
+    return
+  end
+
+  if #view.primary == 0 then
+    return notify("this table has no primary key; refusing to write", vim.log.levels.WARN)
+  end
+
+  local result = M.pending(view)
+
+  if #result.errors > 0 and #result.changes == 0 then
+    for _, err in ipairs(result.errors) do
+      notify(err, vim.log.levels.ERROR)
+    end
+    return
+  end
+
+  if #result.changes == 0 then
+    vim.bo[view.bufnr].modified = false
+    return notify("no changes to write")
+  end
+
+  confirm(view, result, function()
+    client.async(function()
+      local outcome = session.apply_changes(view.session_id, result.changes)
+      notify(("applied %d change(s), %d row(s) affected"):format(
+        outcome.applied,
+        outcome.affected_rows
+      ))
+      session.record(session.get(view.session_id), {
+        sql = table.concat(outcome.statements, "\n"),
+        ok = true,
+        affected = outcome.affected_rows,
+        rows = 0,
+        elapsed_ms = 0,
+      })
+      vim.bo[view.bufnr].modified = false
+      load(view)
+    end, function(err)
+      notify(err, vim.log.levels.ERROR)
+    end)
+  end)
+end
+
+-- ---------------------------------------------------------------------------
+-- Actions
+-- ---------------------------------------------------------------------------
+
+function M.inspect_value()
+  local cell = M.current_cell()
+  if not cell then
+    return notify("move onto a data cell first", vim.log.levels.WARN)
+  end
+
+  value_inspector.open({
+    value = cell.value,
+    column = cell.column,
+    session = cell.view.session_id,
+    title = ("%s.%s"):format(cell.view.table, cell.column.name),
+    on_save = function(text)
+      local line = HEADER_LINES + cell.row_index
+      local current = vim.api.nvim_buf_get_lines(cell.view.bufnr, line - 1, line, false)[1]
+      if not current then
+        return
+      end
+      local cells = grid.parse_row(current)
+      local visible = diff.visible_columns(cell.view.columns, cell.view.hidden)
+      for position, column_index in ipairs(visible) do
+        if column_index == cell.column_index then
+          cells[position] = grid.escape(text)
+        end
+      end
+      -- Re-render the row from the edited cells so widths stay aligned.
+      local values = {}
+      for position, column_index in ipairs(visible) do
+        values[column_index] = grid.parse_value(cells[position], cell.view.columns[column_index])
+      end
+      local rebuilt = grid.render_row(values, cell.view.columns, cell.view.sizes, cell.view.hidden)
+      vim.api.nvim_buf_set_lines(cell.view.bufnr, line - 1, line, false, { rebuilt })
+      notify("staged; :w to apply")
+    end,
+  })
+end
+
+--- Replace the cell under the cursor with the NULL placeholder.
+--- Registered as an operator so `.` repeats it.
+function M.set_null_op()
+  local cell = M.current_cell()
+  if not cell then
+    return
+  end
+  if cell.column and not cell.column.nullable and cell.column.nullable ~= nil then
+    return notify(("%s is NOT NULL"):format(cell.column.name), vim.log.levels.WARN)
+  end
+
+  local line_number = HEADER_LINES + cell.row_index
+  local line = vim.api.nvim_buf_get_lines(cell.view.bufnr, line_number - 1, line_number, false)[1]
+  if not line then
+    return
+  end
+
+  local cells = grid.parse_row(line)
+  local visible = diff.visible_columns(cell.view.columns, cell.view.hidden)
+  local values = {}
+  for position, column_index in ipairs(visible) do
+    if column_index == cell.column_index then
+      values[column_index] = vim.NIL
+    else
+      values[column_index] = grid.parse_value(cells[position], cell.view.columns[column_index])
+    end
+  end
+
+  local rebuilt = grid.render_row(values, cell.view.columns, cell.view.sizes, cell.view.hidden)
+  vim.api.nvim_buf_set_lines(cell.view.bufnr, line_number - 1, line_number, false, { rebuilt })
+  move_to(cell.view, cell.row_index, cell.column_index)
+end
+
+function M.set_null()
+  vim.o.operatorfunc = "v:lua.require'dbclient.ui.data'.set_null_op"
+  return "g@l"
+end
+
+--- Follow the foreign key on the cell under the cursor.
+function M.follow_fk()
+  local cell = M.current_cell()
+  if not cell then
+    return
+  end
+
+  local reference = cell.view.fk[cell.column.name]
+  if not reference then
+    return notify(("%s is not a foreign key"):format(cell.column.name), vim.log.levels.WARN)
+  end
+  if cell.value == nil or cell.value == vim.NIL then
+    return notify("the cell is NULL", vim.log.levels.WARN)
+  end
+
+  -- Record the jump so <C-o> comes back here.
+  vim.cmd("normal! m'")
+
+  local literal = tostring(cell.value):gsub("'", "''")
+  M.open({
+    session_id = cell.view.session_id,
+    schema = reference.ref_schema ~= "" and reference.ref_schema or cell.view.schema,
+    table = reference.ref_table,
+    filter = ("%s = '%s'"):format(reference.ref_column, literal),
+    split = "botright split",
+  })
+end
+
+--- Populate the quickfix list with rows referencing the current one.
+function M.find_references()
+  local cell = M.current_cell()
+  if not cell then
+    return
+  end
+
+  local view = cell.view
+  if #view.primary == 0 then
+    return notify("this table has no primary key", vim.log.levels.WARN)
+  end
+
+  client.async(function()
+    local references = session.referencing_keys(view.session_id, view.schema, view.table)
+    if #references == 0 then
+      return notify("nothing references this table")
+    end
+
+    local pk_values = {}
+    for index, column in ipairs(view.columns) do
+      for _, name in ipairs(view.primary) do
+        if column.name == name then
+          pk_values[name] = view.rows[cell.row_index][index]
+        end
+      end
+    end
+
+    local items = {}
+    for _, reference in ipairs(references) do
+      local target_value = pk_values[reference.ref_column]
+      if target_value ~= nil and target_value ~= vim.NIL then
+        local literal = tostring(target_value):gsub("'", "''")
+        local filter = ("%s = '%s'"):format(reference.column, literal)
+        local count = session.count(view.session_id, {
+          schema = reference.schema,
+          table = reference.table,
+          filter = filter,
+        })
+        if count > 0 then
+          table.insert(items, {
+            text = ("%s.%s  %d row(s)  where %s"):format(
+              reference.schema,
+              reference.table,
+              count,
+              filter
+            ),
+            user_data = {
+              dbclient = true,
+              session_id = view.session_id,
+              schema = reference.schema,
+              table = reference.table,
+              filter = filter,
+            },
+          })
+        end
+      end
+    end
+
+    if #items == 0 then
+      return notify("no rows reference this one")
+    end
+
+    vim.fn.setqflist({}, " ", {
+      title = ("DBClient references: %s.%s"):format(view.schema, view.table),
+      items = items,
+    })
+    vim.cmd("copen")
+  end, function(err)
+    notify(err, vim.log.levels.ERROR)
+  end)
+end
+
+function M.column_stats()
+  local cell = M.current_cell()
+  if not cell then
+    return
+  end
+  require("dbclient.ui.stats").show({
+    session_id = cell.view.session_id,
+    schema = cell.view.schema,
+    table = cell.view.table,
+    column = cell.column.name,
+  })
+end
+
+--- Sort by the column under the cursor, cycling asc → desc → unsorted.
+function M.sort_column()
+  local cell = M.current_cell()
+  if not cell then
+    return
+  end
+
+  local view = cell.view
+  local name = cell.column.name
+  local current = view.sort[1]
+  local next_sort
+
+  if not current or current.column ~= name then
+    next_sort = { { column = name, dir = "asc" } }
+  elseif current.dir == "asc" then
+    next_sort = { { column = name, dir = "desc" } }
+  else
+    next_sort = {}
+  end
+
+  view.sort = next_sort
+  view.offset = 0
+  M.reload()
+end
+
+function M.filter()
+  local view = M.view()
+  if not view then
+    return
+  end
+  vim.ui.input({ prompt = "where ", default = view.filter or "" }, function(input)
+    if input == nil then
+      return
+    end
+    view.filter = vim.trim(input) ~= "" and input or nil
+    view.offset = 0
+    M.reload()
+  end)
+end
+
+function M.clear_filter()
+  local view = M.view()
+  if not view then
+    return
+  end
+  view.filter = nil
+  view.sort = {}
+  view.offset = 0
+  M.reload()
+end
+
+function M.page(delta)
+  local view = M.view()
+  if not view then
+    return
+  end
+  local next_offset = (view.offset or 0) + delta * view.limit
+  if next_offset < 0 then
+    next_offset = 0
+  end
+  if view.total and next_offset >= view.total then
+    return notify("already at the last page")
+  end
+  view.offset = next_offset
+  M.reload()
+end
+
+function M.hide_column()
+  local cell = M.current_cell()
+  if not cell then
+    return
+  end
+  if #diff.visible_columns(cell.view.columns, cell.view.hidden) <= 1 then
+    return notify("at least one column has to stay visible", vim.log.levels.WARN)
+  end
+  cell.view.hidden[cell.column_index] = true
+  M.render(cell.view)
+end
+
+function M.show_columns()
+  local view = M.view()
+  if not view then
+    return
+  end
+  view.hidden = {}
+  M.render(view)
+end
+
+--- Transposed single-row view, the equivalent of `\G` in a CLI client.
+function M.transpose()
+  local cell = M.current_cell()
+  if not cell then
+    return
+  end
+
+  local view = cell.view
+  local row = view.rows[cell.row_index]
+  local width = 0
+  for _, column in ipairs(view.columns) do
+    width = math.max(width, grid.width(column.name))
+  end
+
+  local lines = {}
+  for index, column in ipairs(view.columns) do
+    local text = (grid.display(row[index], column))
+    table.insert(lines, ("%s  %s"):format(grid.pad(column.name, width, "left"), text))
+  end
+
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  vim.bo[bufnr].bufhidden = "wipe"
+  vim.bo[bufnr].filetype = "dbclient-transpose"
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+  vim.bo[bufnr].modifiable = false
+
+  local winid = window.float(bufnr, {
+    title = ("%s.%s row %d"):format(view.schema, view.table, cell.row_index),
+    max_width = 0.8,
+    max_height = 0.8,
+  })
+  window.close_keys(bufnr, winid)
+end
+
+--- Copy the current row into a new unsaved line, ready to become an INSERT.
+function M.paste_row()
+  local cell = M.current_cell()
+  if not cell then
+    return
+  end
+  local line_number = HEADER_LINES + cell.row_index
+  local line = vim.api.nvim_buf_get_lines(cell.view.bufnr, line_number - 1, line_number, false)[1]
+  if not line then
+    return
+  end
+  vim.api.nvim_buf_set_lines(cell.view.bufnr, line_number, line_number, false, { line })
+  vim.api.nvim_win_set_cursor(0, { line_number + 1, 0 })
+  notify("duplicated as a new row; edit the key and :w")
+end
+
+function M.yank()
+  require("dbclient.export").yank_menu(M.view(), M.current_cell())
+end
+
+function M.open_ddl()
+  local view = M.view()
+  if not view then
+    return
+  end
+  require("dbclient.ui.ddl").open({
+    session_id = view.session_id,
+    kind = "table",
+    schema = view.schema,
+    name = view.table,
+  })
+end
+
+-- ---------------------------------------------------------------------------
+-- Wiring
+-- ---------------------------------------------------------------------------
+
+--- Handlers passed to the shared mapping table.
+function M.handlers()
+  return {
+    inspect_value = M.inspect_value,
+    follow_fk = M.follow_fk,
+    find_references = M.find_references,
+    column_stats = M.column_stats,
+    sort_column = M.sort_column,
+    filter = M.filter,
+    clear_filter = M.clear_filter,
+    transpose = M.transpose,
+    hide_column = M.hide_column,
+    show_columns = M.show_columns,
+    set_null = M.set_null,
+    yank = M.yank,
+    paste_row = M.paste_row,
+    reload = M.reload,
+    open_ddl = M.open_ddl,
+    next_cell = function()
+      M.next_cell(1)
+    end,
+    prev_cell = function()
+      M.next_cell(-1)
+    end,
+    next_row = function()
+      M.next_row(1)
+    end,
+    prev_row = function()
+      M.next_row(-1)
+    end,
+    next_page = function()
+      M.page(1)
+    end,
+    prev_page = function()
+      M.page(-1)
+    end,
+    help = help.handler("data"),
+  }
+end
+
+--- Attach mappings, text objects and the write handler to a data buffer.
+---@param view table
+function M.attach(view)
+  local bufnr = view.bufnr
+
+  keymap.apply("data", bufnr, M.handlers())
+  require("dbclient.textobj").attach(bufnr, function()
+    return M.view(bufnr), HEADER_LINES
+  end)
+
+  vim.api.nvim_create_autocmd("BufWriteCmd", {
+    buffer = bufnr,
+    callback = function()
+      M.write()
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("BufWipeout", {
+    buffer = bufnr,
+    callback = function()
+      M.views[bufnr] = nil
+    end,
+  })
+
+  -- Keep the cursor out of the header, where editing would corrupt the grid.
+  vim.api.nvim_create_autocmd("CursorMoved", {
+    buffer = bufnr,
+    callback = function()
+      local position = vim.api.nvim_win_get_cursor(0)
+      if position[1] <= HEADER_LINES and #view.rows > 0 then
+        pcall(vim.api.nvim_win_set_cursor, 0, { HEADER_LINES + 1, position[2] })
+      end
+    end,
+  })
+end
+
+M.HEADER_LINES = HEADER_LINES
 
 return M

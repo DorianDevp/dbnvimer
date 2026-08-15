@@ -1,4 +1,5 @@
-/target/
-/rust/dbclient-core/target/
-/.luarc.json
+rust/dbclient-core/target/
+bin/*
+!bin/.gitkeep
+*.swp
 .DS_Store

@@ -1,14 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="620" viewBox="0 0 1180 620" role="img">
-<rect width="1180" height="620" fill="#15161a"/>
-<rect x="18" y="18" width="1144" height="584" rx="8" fill="#1f2329" stroke="#3b4048"/>
-<text x="48" y="66" font-family="monospace" font-size="16" fill="#e5c07b">DBClient Data - shop.orders</text>
-<text x="48" y="106" font-family="monospace" font-size="15" fill="#abb2bf">shop.orders  rows:3  limit:10</text>
-<text x="48" y="134" font-family="monospace" font-size="15" fill="#61afef">id | customer_id | status  | total | created_at                </text>
-<text x="48" y="162" font-family="monospace" font-size="15" fill="#5c6370">---+-------------+---------+-------+---------------------------</text>
-<rect x="40" y="172" width="1080" height="30" fill="#20242b"/>
-<text x="48" y="190" font-family="monospace" font-size="15" fill="#abb2bf">1  | 1           | paid    | 98.00 | 2026-06-30 23:15:19.000000</text>
-<text x="48" y="218" font-family="monospace" font-size="15" fill="#abb2bf">2  | 2           | pending | 59.90 | 2026-06-30 23:15:19.000000</text>
-<rect x="40" y="228" width="1080" height="30" fill="#20242b"/>
-<text x="48" y="246" font-family="monospace" font-size="15" fill="#abb2bf">3  | 1           | paid    | 24.50 | 2026-06-30 23:15:19.000000</text>
-<text x="48" y="550" font-family="monospace" font-size="14" fill="#7f848e">Real preview buffer from MariaDB docker. ]c/[c cells, ]r/[r rows, E edits by primary key.</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="729" height="351" viewBox="0 0 729 351" font-family="JetBrains Mono, DejaVu Sans Mono, monospace" font-size="13">
+<rect width="729" height="351" rx="8" fill="#16181d"/>
+<rect x="0" y="0" width="729" height="30" rx="8" fill="#1b1e24"/>
+<rect x="0" y="22" width="729" height="8" fill="#1b1e24"/>
+<circle cx="18" cy="15" r="5" fill="#e06c75"/><circle cx="36" cy="15" r="5" fill="#e5c07b"/><circle cx="54" cy="15" r="5" fill="#98c379"/>
+<text x="74" y="20" fill="#6b7280">Editing a table as text; :w writes the difference</text>
+<line x1="0" y1="30" x2="729" y2="30" stroke="#2c313a" stroke-width="1"/>
+<text x="16" y="61" fill="#e5c07b" xml:space="preserve">shop.customers  ·  rows 1-5</text>
+<text x="16" y="80" fill="#61afef" xml:space="preserve">id | name                   | city | balance  | signed_up  | note               </text>
+<text x="16" y="99" fill="#4b5263" xml:space="preserve">---+------------------------+------+----------+------------+--------------------</text>
+<text x="16" y="118" fill="#c5cad3" xml:space="preserve"> 1 | Łódź Handel Sp. z o.o. | PL   | 12450.75 | 2025-11-02 | ∅                  </text>
+<text x="16" y="137" fill="#c5cad3" xml:space="preserve"> 2 | Gdańsk Logistics       | PL   |   980.00 | 2026-01-14 | net 30             </text>
+<text x="16" y="156" fill="#c5cad3" xml:space="preserve"> 3 | Kraków Trading SA         | PL   |  -215.50 | 2026-02-01 | has \| a pipe      </text>
+<text x="16" y="175" fill="#c5cad3" xml:space="preserve"> 4 | Bremen Import GmbH     | DE   | 45000.00 | 2024-08-19 | two\nlines         </text>
+<text x="16" y="213" fill="#6b7280" xml:space="preserve">:w</text>
+<text x="16" y="251" fill="#c5cad3" xml:space="preserve">shop.customers  —  1 update, 1 delete</text>
+<text x="16" y="289" fill="#61afef" xml:space="preserve">  update  id='3'</text>
+<text x="16" y="308" fill="#6b7280" xml:space="preserve">            name: 'Kraków Trading' → 'Kraków Trading SA'</text>
+<text x="16" y="327" fill="#e06c75" xml:space="preserve">  delete  id='5'</text>
 </svg>

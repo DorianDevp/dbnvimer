@@ -1,38 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="680" viewBox="0 0 1180 680" role="img">
-<rect width="1180" height="680" fill="#15161a"/>
-<rect x="18" y="18" width="1144" height="644" rx="8" fill="#1f2329" stroke="#3b4048"/>
-<rect x="34" y="70" width="332" height="574" fill="#181b20" stroke="#3b4048"/>
-<rect x="366" y="70" width="778" height="390" fill="#16191f" stroke="#3b4048"/>
-<rect x="366" y="460" width="778" height="184" fill="#181b20" stroke="#3b4048"/>
-<text x="54" y="104" font-family="monospace" font-size="16" fill="#e5c07b">DBClient tree - MariaDB</text>
-<text x="54" y="136" font-family="monospace" font-size="14" fill="#e5c07b">v [db] shot_mariadb</text>
-<text x="54" y="161" font-family="monospace" font-size="14" fill="#c678dd">  &gt; [schema] information_schema</text>
-<text x="54" y="186" font-family="monospace" font-size="14" fill="#c678dd">  &gt; [schema] mysql</text>
-<text x="54" y="211" font-family="monospace" font-size="14" fill="#c678dd">  &gt; [schema] performance_schema</text>
-<text x="54" y="236" font-family="monospace" font-size="14" fill="#c678dd">  v [schema] shop</text>
-<text x="54" y="261" font-family="monospace" font-size="14" fill="#abb2bf">    v tables</text>
-<text x="54" y="286" font-family="monospace" font-size="14" fill="#98c379">      &gt; [table] customers</text>
-<text x="54" y="311" font-family="monospace" font-size="14" fill="#98c379">      v [table] orders</text>
-<text x="54" y="336" font-family="monospace" font-size="14" fill="#56b6c2">          [col] id : int(11)</text>
-<text x="54" y="361" font-family="monospace" font-size="14" fill="#56b6c2">          [col] customer_id : int(11)</text>
-<text x="54" y="386" font-family="monospace" font-size="14" fill="#56b6c2">          [col] status : varchar(32)</text>
-<text x="54" y="411" font-family="monospace" font-size="14" fill="#56b6c2">          [col] total : decimal(10,2)</text>
-<text x="54" y="436" font-family="monospace" font-size="14" fill="#56b6c2">          [col] created_at : timestamp</text>
-<text x="54" y="461" font-family="monospace" font-size="14" fill="#98c379">      &gt; [table] order_items</text>
-<text x="54" y="486" font-family="monospace" font-size="14" fill="#98c379">      &gt; [table] products</text>
-<text x="54" y="511" font-family="monospace" font-size="14" fill="#abb2bf">    v procedures/functions</text>
-<text x="54" y="536" font-family="monospace" font-size="14" fill="#98c379">        [procedure] recent_orders</text>
-<text x="410" y="104" font-family="monospace" font-size="16" fill="#e5c07b">DBClient Query - shot_mariadb</text>
-<text x="410" y="140" font-family="monospace" font-size="15" fill="#abb2bf">select c.email, count(o.id) as orders, sum(o.total) as revenue</text>
-<text x="410" y="168" font-family="monospace" font-size="15" fill="#abb2bf">from customers c</text>
-<text x="410" y="196" font-family="monospace" font-size="15" fill="#abb2bf">left join orders o on o.customer_id = c.id</text>
-<text x="410" y="224" font-family="monospace" font-size="15" fill="#abb2bf">group by c.email</text>
-<text x="410" y="252" font-family="monospace" font-size="15" fill="#abb2bf">order by revenue desc;</text>
-<text x="410" y="492" font-family="monospace" font-size="16" fill="#e5c07b">DBClient Results</text>
-<text x="410" y="528" font-family="monospace" font-size="14" fill="#61afef">email | orders | revenue</text>
-<text x="410" y="554" font-family="monospace" font-size="14" fill="#5c6370">---+--------+--------</text>
-<text x="410" y="580" font-family="monospace" font-size="14" fill="#abb2bf">admin@example.com | 2 | 122.50</text>
-<rect x="402" y="588" width="680" height="28" fill="#20242b"/>
-<text x="410" y="606" font-family="monospace" font-size="14" fill="#abb2bf">ops@example.com | 1 | 59.90</text>
-<text x="410" y="632" font-family="monospace" font-size="14" fill="#abb2bf">readonly@example.com | 0 | NULL</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="998" height="351" viewBox="0 0 998 351" font-family="JetBrains Mono, DejaVu Sans Mono, monospace" font-size="13">
+<rect width="998" height="351" rx="8" fill="#16181d"/>
+<rect x="0" y="0" width="998" height="30" rx="8" fill="#1b1e24"/>
+<rect x="0" y="22" width="998" height="8" fill="#1b1e24"/>
+<circle cx="18" cy="15" r="5" fill="#e06c75"/><circle cx="36" cy="15" r="5" fill="#e5c07b"/><circle cx="54" cy="15" r="5" fill="#98c379"/>
+<text x="74" y="20" fill="#6b7280">DBClient.nvim — sidebar and an editable data buffer</text>
+<line x1="0" y1="30" x2="998" y2="30" stroke="#2c313a" stroke-width="1"/>
+<text x="16" y="61" fill="#e5c07b" xml:space="preserve">▾ ● shop                         │ shop.customers  ·  rows 1-5</text>
+<text x="16" y="80" fill="#61afef" xml:space="preserve">  ▸ information_schema           │ id | name                   | city | balance  | signed_up  | note               </text>
+<text x="16" y="99" fill="#4b5263" xml:space="preserve">  ▸ mysql                        │ ---+------------------------+------+----------+------------+--------------------</text>
+<text x="16" y="118" fill="#c5cad3" xml:space="preserve">  ▸ performance_schema           │  1 | Łódź Handel Sp. z o.o. | PL   | 12450.75 | 2025-11-02 | ∅                  </text>
+<text x="16" y="137" fill="#c5cad3" xml:space="preserve">  ▾ shop                         │  2 | Gdańsk Logistics       | PL   |   980.00 | 2026-01-14 | net 30             </text>
+<text x="16" y="156" fill="#c5cad3" xml:space="preserve">    ▾ customers                  │  3 | Kraków Trading         | PL   |  -215.50 | 2026-02-01 | has \| a pipe      </text>
+<text x="16" y="175" fill="#c5cad3" xml:space="preserve">        id  int(11)  PK          │  4 | Bremen Import GmbH     | DE   | 45000.00 | 2024-08-19 | two\nlines         </text>
+<text x="16" y="194" fill="#c5cad3" xml:space="preserve">        name  varchar(64)        │  5 | NULL                   | CZ   |     0.00 | 2026-03-07 | literal null string</text>
+<text x="16" y="213" fill="#c5cad3" xml:space="preserve">        city  varchar(8)         │ </text>
+<text x="16" y="232" fill="#c5cad3" xml:space="preserve">        balance  decimal(12,2)   │ </text>
+<text x="16" y="251" fill="#c5cad3" xml:space="preserve">        signed_up  date          │ </text>
+<text x="16" y="270" fill="#c5cad3" xml:space="preserve">        note  varchar(64)        │ </text>
+<text x="16" y="289" fill="#c5cad3" xml:space="preserve">    ▸ orders                     │ </text>
+<text x="16" y="308" fill="#c5cad3" xml:space="preserve">  ▸ sys                          │ </text>
+<text x="16" y="327" fill="#c5cad3" xml:space="preserve">▸ ○ shop_prod  (read)            │ </text>
 </svg>

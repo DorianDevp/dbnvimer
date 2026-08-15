@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="384" height="389" viewBox="0 0 384 389" font-family="JetBrains Mono, DejaVu Sans Mono, monospace" font-size="13">
+<rect width="384" height="389" rx="8" fill="#16181d"/>
+<rect x="0" y="0" width="384" height="30" rx="8" fill="#1b1e24"/>
+<rect x="0" y="22" width="384" height="8" fill="#1b1e24"/>
+<circle cx="18" cy="15" r="5" fill="#e06c75"/><circle cx="36" cy="15" r="5" fill="#e5c07b"/><circle cx="54" cy="15" r="5" fill="#98c379"/>
+<text x="74" y="20" fill="#6b7280">A query buffer and its result grid</text>
+<line x1="0" y1="30" x2="384" y2="30" stroke="#2c313a" stroke-width="1"/>
+<text x="16" y="61" fill="#6b7280" xml:space="preserve">-- @conn: shop</text>
+<text x="16" y="80" fill="#c5cad3" xml:space="preserve">select c.city,</text>
+<text x="16" y="99" fill="#c5cad3" xml:space="preserve">       count(o.id)   as orders,</text>
+<text x="16" y="118" fill="#c5cad3" xml:space="preserve">       sum(o.total)  as revenue</text>
+<text x="16" y="137" fill="#c5cad3" xml:space="preserve">from customers c</text>
+<text x="16" y="156" fill="#c5cad3" xml:space="preserve">left join orders o on o.customer_id = c.id</text>
+<text x="16" y="175" fill="#c5cad3" xml:space="preserve">group by c.city</text>
+<text x="16" y="194" fill="#c5cad3" xml:space="preserve">order by revenue desc;</text>
+<text x="16" y="232" fill="#6b7280" xml:space="preserve">&lt;C-CR&gt;</text>
+<text x="16" y="270" fill="#e5c07b" xml:space="preserve">3 row(s)  ·  0 ms  ·  select  ·  shop</text>
+<text x="16" y="289" fill="#61afef" xml:space="preserve">city | orders | revenue</text>
+<text x="16" y="308" fill="#4b5263" xml:space="preserve">-----+--------+--------</text>
+<text x="16" y="327" fill="#c5cad3" xml:space="preserve">PL   |      3 | 1255.75</text>
+<text x="16" y="346" fill="#c5cad3" xml:space="preserve">DE   |      1 | 1200.00</text>
+<text x="16" y="365" fill="#c5cad3" xml:space="preserve">CZ   |      0 |       ∅</text>
+</svg>

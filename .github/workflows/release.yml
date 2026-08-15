@@ -1,0 +1,96 @@
+name: Release binaries
+
+# Binaries are attached to a GitHub Release rather than committed to the
+# repository. A committed binary is cloned by every user on every platform,
+# stays in git history forever, and goes stale the moment the wire protocol
+# changes — which is exactly how a confusing "unknown session operation" error
+# reaches someone who only pulled.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.output }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            output: dbclient-core-linux-x86_64
+            executable: dbclient-core
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            output: dbclient-core-linux-aarch64
+            executable: dbclient-core
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            output: dbclient-core-macos-x86_64
+            executable: dbclient-core
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            output: dbclient-core-macos-aarch64
+            executable: dbclient-core
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            output: dbclient-core-windows-x86_64.exe
+            executable: dbclient-core.exe
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }} --manifest-path rust/dbclient-core/Cargo.toml
+
+      - name: Verify the binary answers
+        shell: bash
+        run: |
+          binary="rust/dbclient-core/target/${{ matrix.target }}/release/${{ matrix.executable }}"
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ] && [ "$(uname -m)" != "aarch64" ]; then
+            echo "cross-built, skipping the run check"
+            exit 0
+          fi
+          "$binary" version
+
+      - name: Stage and checksum
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "rust/dbclient-core/target/${{ matrix.target }}/release/${{ matrix.executable }}" "dist/${{ matrix.output }}"
+          cd dist
+          if command -v sha256sum >/dev/null; then
+            sha256sum "${{ matrix.output }}" > "${{ matrix.output }}.sha256"
+          else
+            shasum -a 256 "${{ matrix.output }}" > "${{ matrix.output }}.sha256"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.output }}
+          path: dist/*
+
+  publish:
+    name: Attach to the release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
