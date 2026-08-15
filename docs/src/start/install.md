@@ -36,5 +36,14 @@ The plugin looks for a locally built binary first, then the bundled one, then
 :checkhealth dbclient
 ```
 
+Six sections: the environment, the core binary it found, whether the
+protocol version matches the plugin, whether the daemon actually starts and
+answers, every connection with what is wrong with it, and where things are
+stored.
+
 If the daemon ever gets into a strange state, `:DBClientRestart` starts a new
 one. Open connections are closed cleanly first.
+
+## Then
+
+Press `<leader>dd`. [Connecting](connecting.md) picks it up from there.

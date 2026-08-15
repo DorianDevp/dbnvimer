@@ -1,35 +1,55 @@
 # The sidebar
 
-`<leader>dd`. Connections, schemas, tables, columns, routines.
+`<leader>dd`. One line per node, four levels deep.
 
 ```text
-● dev                    mariadb 127.0.0.1:3306/shop
-  ▾ shop
-    ▸ orders             1 204 rows
-    ▸ customers            340 rows
-    ▸ order_items        4 118 rows
-    ▸ products             112 rows
-    ▸ order_status           4 rows
+▸ ○ reporting  (read)
+▾ ● shop
+  ▾ main
+    ▸ customers
+    ▸ order_status
+    ▸ orders
 ```
 
-## Walking the tree
+`▸` and `▾` are closed and open. `○` and `●` are disconnected and connected.
+
+It is deliberately terse: this is an index, not a report. Row counts, sizes
+and definitions are one keystroke away rather than in your face on every line.
+
+## `<CR>` versus `l`
+
+They differ on a table node, and the difference is the point.
+
+`l` expands it, so you can read the columns without leaving the tree:
+
+```text
+    ▾ customers
+        id  INTEGER  PK
+        name  TEXT
+        email  TEXT
+        created_at  TEXT
+```
+
+`<CR>` opens the table's **data** instead. On a connection or a schema, where
+there is nothing else it could mean, `<CR>` expands.
 
 | Key | Effect |
 |---|---|
-| `<CR>` `o` | open or toggle the node |
+| `<CR>` `o` | connect, expand, or open the data — whatever the node is |
 | `l` | expand |
-| `h` | collapse, or go to the parent |
+| `h` | collapse, or jump to the parent |
 | `]t` `[t` | next and previous table |
 | `f` | filter the tree — type a few letters |
 | `F` | clear the filter |
 | `r` | refresh this node |
 | `R` | drop the metadata cache and refresh |
+| `q` | close the sidebar |
 
 ## Opening things from it
 
 | Key | Opens |
 |---|---|
-| `gd` | the table's data |
+| `gd` | the table's data (the same as `<CR>` on a table) |
 | `gD` | its definition |
 | `gq` | a query buffer bound to this connection |
 | `gs` | an inspection of the schema or table |
@@ -46,3 +66,9 @@
 
 `a` adds, `c` edits, `x` deletes, `t` tests without connecting, and `y` copies
 a detected connection into your own store.
+
+## It keeps its width
+
+38 columns, with `winfixwidth`, so other splits do not squash it and it does
+not grow. `ui.sidebar_width` changes it permanently; `<C-w>20>` changes it for
+now.

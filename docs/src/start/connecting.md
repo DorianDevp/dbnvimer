@@ -1,26 +1,64 @@
 # Connecting
 
-Press `<leader>dd`.
+Press `<leader>dd`, or run `:DBClient`.
 
-A panel opens on the left listing every connection DBClient knows about.
+## The first time
+
+A 38-column panel opens on the left, the cursor goes into it, and — if you
+have configured nothing and the project declares nothing — it says exactly
+this:
 
 ```text
-connections
-
-○ dev          detect  mariadb  127.0.0.1:3306/shop
-○ prod         setup   postgres db.internal/app
-
-a add   c edit   x delete   t test   <CR> connect   g? help
+  no connections; press a to add one
 ```
 
-Put the cursor on one and press `<CR>`. The circle fills in, the name turns
-green, and the tree expands to show the schema.
+That is the whole sidebar. Press `a`.
+
+```text
+add a connection
+
+  name        dev
+  adapter     mariadb          (postgres · mariadb · sqlite)
+  host        127.0.0.1
+  port        3306
+  user        app
+  password    $SHOP_DB_PASSWORD
+  database    shop
+  access      write            (write · read · sandbox)
+  color       blue
+
+t test   <CR> save   q cancel
+```
+
+`t` tries the connection without saving it, which is the fastest way to find
+out whether the password is right.
+
+## Once there is something to connect to
+
+```text
+▸ ○ reporting  (read)
+▸ ○ shop
+```
+
+One line per connection. `○` is closed, `●` is open, and the access level is
+shown when it is not the default. Detected connections — the ones DBClient
+found in your `.env` or `docker-compose.yml` without being told — appear in a
+dimmer colour.
+
+Put the cursor on one and press `<CR>`:
+
+```text
+▸ ○ reporting  (read)
+▾ ● shop
+  ▸ main
+```
+
+It connected and expanded in one keystroke. The schema is underneath.
 
 ## Connections you never configured
 
-`dev` above is marked `detect`. Nothing declared it: on start, and on every
-`:cd`, DBClient walks up from the working directory reading files the project
-already has.
+On start, and on every `:cd`, DBClient walks up from the working directory
+reading files the project already has.
 
 | Source | What it reads |
 |---|---|
@@ -29,12 +67,10 @@ already has.
 | `database_yml` | Rails' `config/database.yml` |
 | `dbclient_lua` | a `.dbclient.lua` you wrote yourself |
 
-Detected connections are shown dimmed. Nothing is copied anywhere until you
-press `y` on one in the connection manager, which turns it into a stored
-connection you can edit.
+Nothing is copied anywhere until you press `y` on one in the connection
+manager, which turns it into a stored connection you can edit.
 
 ## If it does not connect
 
-You get a panel naming which layer broke, rather than one line about a
-refused connection. See [Connections that will not
-open](../errors/connections.md).
+You get a panel naming which layer broke, rather than one line about a refused
+connection. See [Connections that will not open](../errors/connections.md).
