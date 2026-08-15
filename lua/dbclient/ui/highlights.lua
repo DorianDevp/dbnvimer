@@ -1,9 +1,15 @@
 --- Highlight groups and the namespaces used to apply them.
 ---
---- Everything links to a standard group by default, so DBClient inherits the
---- user's colourscheme instead of imposing colours. Connection colours are the
---- one exception: they are deliberately loud, because the whole point is that a
---- production connection should be impossible to mistake for staging.
+--- The colours come from `ui.theme`, which generates them from the
+--- colourscheme's own background rather than shipping a fixed set. See that
+--- module for why. Two escape hatches:
+---
+---   `ui.theme.enabled = false`  falls back to linking every group to a stock
+---                               one, which is what this used to do;
+---   `ui.theme.overrides`        replaces individual roles or groups.
+---
+--- Either way the group *names* are stable, so anything a user has already set
+--- by hand keeps working.
 
 local M = {}
 
@@ -12,8 +18,10 @@ M.ns_rows = vim.api.nvim_create_namespace("dbclient-rows")
 M.ns_virt = vim.api.nvim_create_namespace("dbclient-virt")
 M.ns_diag = vim.api.nvim_create_namespace("dbclient-diagnostics")
 
+--- The fallback, used when the generated theme is switched off.
 local links = {
   DBClientHeader = "Title",
+  DBClientHeaderRule = "Comment",
   DBClientSeparator = "Comment",
   DBClientNull = "Comment",
   DBClientNumber = "Number",
@@ -37,6 +45,9 @@ local links = {
   DBClientHelpTitle = "Title",
   DBClientHelpKey = "Special",
   DBClientHelpText = "Comment",
+  DBClientBorder = "FloatBorder",
+  DBClientFloat = "NormalFloat",
+  DBClientFloatTitle = "Title",
 
   DBClientPending = "DiffChange",
   DBClientPendingAdd = "DiffAdd",
@@ -47,44 +58,64 @@ local links = {
   DBClientPlanHot = "ErrorMsg",
   DBClientPlanMisestimate = "ErrorMsg",
 
+  DBClientSeverityError = "DiagnosticError",
+  DBClientSeverityWarn = "DiagnosticWarn",
+  DBClientSeverityHint = "DiagnosticHint",
+  DBClientSeverityOk = "DiagnosticOk",
+
   DBClientStripe = "CursorLine",
   DBClientFk = "Comment",
+
+  DBClientAccessRead = "DiagnosticInfo",
+  DBClientAccessSandbox = "Constant",
+  DBClientTransaction = "WarningMsg",
 }
+
+local theme = require("dbclient.ui.theme")
 
 --- Connection colour names usable as `connections.<name>.color`.
-M.colors = {
-  red = { fg = "#f7768e", bold = true },
-  orange = { fg = "#ff9e64", bold = true },
-  yellow = { fg = "#e0af68", bold = true },
-  green = { fg = "#9ece6a", bold = true },
-  blue = { fg = "#7aa2f7", bold = true },
-  purple = { fg = "#bb9af7", bold = true },
-  cyan = { fg = "#7dcfff", bold = true },
-  grey = { fg = "#787c99" },
-}
+---
+--- Generated, so they land at a known contrast on the user's actual
+--- background instead of being three fixed hex values that vanish on a light
+--- colourscheme.
+M.colors = theme.CONNECTION_HUES
+
+local function theme_options()
+  local ok, config = pcall(require, "dbclient.config")
+  if not ok or not config.options then
+    return { enabled = true }
+  end
+  return (config.options.ui or {}).theme or { enabled = true }
+end
 
 function M.setup()
-  for name, target in pairs(links) do
-    vim.api.nvim_set_hl(0, name, { link = target, default = true })
+  local options = theme_options()
+
+  if options.enabled == false then
+    for name, target in pairs(links) do
+      vim.api.nvim_set_hl(0, name, { link = target, default = true })
+    end
+    for name in pairs(M.colors) do
+      vim.api.nvim_set_hl(0, "DBClientConn" .. name:sub(1, 1):upper() .. name:sub(2), {
+        link = "DBClientConnection",
+        default = true,
+      })
+    end
+    return
   end
-  for name, attributes in pairs(M.colors) do
-    vim.api.nvim_set_hl(
-      0,
-      "DBClientConn" .. name:sub(1, 1):upper() .. name:sub(2),
-      vim.tbl_extend("keep", attributes, { default = true })
-    )
-  end
-  -- Read-only and sandbox connections get their own accents.
-  vim.api.nvim_set_hl(0, "DBClientAccessRead", { link = "DBClientConnBlue", default = true })
-  vim.api.nvim_set_hl(0, "DBClientAccessSandbox", { link = "DBClientConnPurple", default = true })
-  vim.api.nvim_set_hl(0, "DBClientTransaction", { link = "DBClientConnOrange", default = true })
+
+  theme.apply({
+    background = options.background,
+    foreground = options.foreground,
+    overrides = options.overrides,
+  })
 end
 
 --- Highlight group for a connection colour name.
 ---@param color string|nil
 ---@return string
 function M.connection_group(color)
-  if not color or not M.colors[color] then
+  if not color or M.colors[color] == nil then
     return "DBClientConnection"
   end
   return "DBClientConn" .. color:sub(1, 1):upper() .. color:sub(2)
@@ -121,32 +152,40 @@ function M.grid(bufnr, opts)
   if header + 1 < opts.first_row then
     vim.api.nvim_buf_set_extmark(bufnr, M.ns, header + 1, 0, {
       end_row = header + 2,
-      hl_group = "DBClientSeparator",
+      hl_group = "DBClientHeaderRule",
       hl_eol = true,
     })
   end
 
+  local grid = require("dbclient.ui.grid")
   local line_count = vim.api.nvim_buf_line_count(bufnr)
+  local body = vim.api.nvim_buf_get_lines(bufnr, opts.first_row, opts.first_row + (opts.rows or 0), false)
+
   for index = 0, (opts.rows or 0) - 1 do
     local line = opts.first_row + index
     if line >= line_count then
       break
     end
 
-    for column_index, span in pairs(opts.spans or {}) do
+    -- Spans are measured in display cells; extmarks want bytes, and on a row
+    -- holding anything outside ASCII the two are different numbers.
+    local text = body[index + 1] or ""
+    local spans = grid.line_spans(text, opts.spans or {})
+
+    for column_index, span in pairs(spans) do
       local group = M.class_group(opts.columns[column_index] and opts.columns[column_index].class)
       if group and span.width > 0 then
         pcall(vim.api.nvim_buf_set_extmark, bufnr, M.ns, line, span.start, {
-          end_col = math.min(span.finish, #(vim.api.nvim_buf_get_lines(bufnr, line, line + 1, false)[1] or "")),
+          end_col = math.min(span.finish, #text),
           hl_group = group,
           priority = 100,
         })
       end
     end
 
-    for _, span in ipairs((opts.nulls or {})[index + 1] or {}) do
+    for _, span in ipairs(grid.line_spans(text, (opts.nulls or {})[index + 1] or {})) do
       pcall(vim.api.nvim_buf_set_extmark, bufnr, M.ns, line, span.start, {
-        end_col = span.finish,
+        end_col = math.min(span.finish, #text),
         hl_group = "DBClientNull",
         priority = 110,
       })

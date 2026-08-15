@@ -476,6 +476,10 @@ local function define_commands()
     require("dbclient.ui.help").show_all()
   end, { force = true })
 
+  command("DBClientPalette", function()
+    require("dbclient.ui.help").show_palette()
+  end, { force = true, desc = "Show the generated palette and its contrast ratios" })
+
   command("DBClientRestart", function()
     session.disconnect_all()
     client.stop()
@@ -510,8 +514,15 @@ local function define_autocommands()
     end,
   })
 
+  -- The palette is derived from the colourscheme's own background, so it has
+  -- to be rebuilt whenever that background changes underneath it.
   vim.api.nvim_create_autocmd("ColorScheme", {
     group = group,
+    callback = highlights.setup,
+  })
+  vim.api.nvim_create_autocmd("OptionSet", {
+    group = group,
+    pattern = { "background", "termguicolors" },
     callback = highlights.setup,
   })
 
@@ -748,6 +759,7 @@ end
 ---@param opts table|nil
 function M.setup(opts)
   config.setup(opts)
+  require("dbclient.ui.grid").use_style(config.get().ui.grid_style)
   highlights.setup()
   define_commands()
   define_autocommands()

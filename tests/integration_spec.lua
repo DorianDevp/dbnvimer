@@ -648,9 +648,18 @@ t.describe("integration: relation walking and the trail", {
         column_index = index
       end
     end
+    -- `spans` are display cells; the cursor takes bytes, and the rule glyph
+    -- alone makes the two differ.
+    local first_row = vim.api.nvim_buf_get_lines(
+      orders.bufnr,
+      data.HEADER_LINES,
+      data.HEADER_LINES + 1,
+      false
+    )[1]
+    local byte_spans = require("dbclient.ui.grid").line_spans(first_row, orders.spans)
     vim.api.nvim_win_set_cursor(0, {
       data.HEADER_LINES + 1,
-      orders.spans[column_index].start,
+      byte_spans[column_index].start,
     })
 
     local cell = data.current_cell()

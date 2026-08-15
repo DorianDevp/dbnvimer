@@ -17,14 +17,55 @@ local config = require("dbclient.config")
 
 local M = {}
 
-M.SEPARATOR = " | "
-M.CORNER = "-+-"
+--- How the grid draws its rules.
+---
+--- `line` is the default and is what makes a result set look like a table
+--- rather than like terminal output; `ascii` exists for terminals and fonts
+--- that mangle box-drawing characters.
+---
+--- Switching styles is safe at any time because escaping does not depend on it:
+--- both candidate delimiters are always escaped in stored text, so a value is
+--- rendered and parsed identically either way.
+M.STYLES = {
+  line = { separator = " │ ", corner = "─┼─", delimiter = "│", rule = "─" },
+  ascii = { separator = " | ", corner = "-+-", delimiter = "|", rule = "-" },
+}
+
+M.SEPARATOR = M.STYLES.line.separator
+M.CORNER = M.STYLES.line.corner
+M.DELIMITER = M.STYLES.line.delimiter
+M.RULE = M.STYLES.line.rule
+
+--- Adopt a rule style. Called from `setup()`; safe to call at any time.
+---@param name string|nil
+function M.use_style(name)
+  local style = M.STYLES[name or "line"] or M.STYLES.line
+  M.SEPARATOR, M.CORNER = style.separator, style.corner
+  M.DELIMITER, M.RULE = style.delimiter, style.rule
+end
+
+--- Escape sequences, as `character = code`. Codes are always one ASCII byte,
+--- so an escape is always exactly two bytes and the parser never has to decode
+--- UTF-8 to find a boundary.
+local ESCAPES = {
+  ["\\"] = "\\",
+  ["\n"] = "n",
+  ["\r"] = "r",
+  ["\t"] = "t",
+  ["|"] = "|",
+  ["│"] = "v",
+}
+
+local UNESCAPES = {}
+for character, code in pairs(ESCAPES) do
+  UNESCAPES[code] = character
+end
 
 --- Escape a value for display inside one grid cell.
 ---
---- Backslash, the column separator and the control characters that would break
---- a single-line buffer entry are escaped so the text stays on one line and can
---- be parsed back unambiguously.
+--- Backslash, both candidate column separators and the control characters that
+--- would break a single-line buffer entry are escaped, so the text stays on one
+--- line and can be parsed back unambiguously.
 ---@param text string
 ---@return string
 function M.escape(text)
@@ -35,6 +76,7 @@ function M.escape(text)
       :gsub("\r", "\\r")
       :gsub("\t", "\\t")
       :gsub("|", "\\|")
+      :gsub("│", "\\v")
   )
 end
 
@@ -48,8 +90,7 @@ function M.unescape(text)
   while index <= length do
     local char = text:sub(index, index)
     if char == "\\" and index < length then
-      local next_char = text:sub(index + 1, index + 1)
-      local mapped = ({ n = "\n", r = "\r", t = "\t", ["\\"] = "\\", ["|"] = "|" })[next_char]
+      local mapped = UNESCAPES[text:sub(index + 1, index + 1)]
       if mapped then
         table.insert(out, mapped)
         index = index + 2
@@ -208,22 +249,25 @@ function M.widths(columns, rows, hidden)
   return sizes
 end
 
---- Visible byte spans for each column in a rendered line.
+--- Where each visible column sits, measured in display cells.
 ---
---- Spans are byte offsets so they can be handed straight to extmarks; the
---- cursor helpers convert to and from them.
+--- Cells, not bytes, because that is what alignment is in and it is the same
+--- for every row. Extmarks and the cursor want bytes, which differ per row as
+--- soon as any value leaves ASCII — run the span through `M.line_spans` with
+--- the line in question before using it as an offset.
 ---@param columns table[]
 ---@param sizes integer[]
 ---@param hidden table<integer, boolean>|nil
----@return table[] spans
+---@return table[] spans  measured in display cells; see `M.line_spans`
 function M.spans(columns, sizes, hidden)
   local spans = {}
   local offset = 0
+  local separator = M.width(M.SEPARATOR)
   for index in ipairs(columns) do
     if not (hidden and hidden[index]) then
       local width = sizes[index] or 0
       spans[index] = { start = offset, finish = offset + width, width = width }
-      offset = offset + width + #M.SEPARATOR
+      offset = offset + width + separator
     end
   end
   return spans
@@ -240,7 +284,7 @@ function M.render_header(columns, sizes, hidden)
     if not (hidden and hidden[index]) then
       local width = sizes[index] or 0
       table.insert(header, M.pad(column.name or tostring(column), width, "left"))
-      table.insert(underline, string.rep("-", width))
+      table.insert(underline, string.rep(M.RULE, width))
     end
   end
   return table.concat(header, M.SEPARATOR), table.concat(underline, M.CORNER)
@@ -251,11 +295,12 @@ end
 ---@param columns table[]
 ---@param sizes integer[]
 ---@param hidden table<integer, boolean>|nil
----@return string line, table[] nulls  byte spans of NULL cells
+---@return string line, table[] nulls  cell spans of NULL cells, as `M.spans`
 function M.render_row(values, columns, sizes, hidden)
   local cells = {}
   local nulls = {}
   local offset = 0
+  local separator = M.width(M.SEPARATOR)
 
   for index, column in ipairs(columns) do
     if not (hidden and hidden[index]) then
@@ -264,9 +309,9 @@ function M.render_row(values, columns, sizes, hidden)
       local padded = M.pad(text, width, M.alignment(column.class))
       table.insert(cells, padded)
       if is_null then
-        table.insert(nulls, { start = offset, finish = offset + #padded })
+        table.insert(nulls, { start = offset, finish = offset + width })
       end
-      offset = offset + #padded + #M.SEPARATOR
+      offset = offset + width + separator
     end
   end
 
@@ -275,11 +320,15 @@ end
 
 --- Split a rendered line back into per-column display text.
 ---
---- Escaped separators (`\|`) are not split points, which is what makes the
---- round trip safe for values containing a pipe.
+--- An escaped separator is not a split point, which is what makes the round
+--- trip safe for values containing the delimiter. Escapes are always two bytes,
+--- so skipping one can never land inside a multi-byte delimiter.
 ---@param line string
+---@param delimiter? string  defaults to the active style's
 ---@return string[]
-function M.parse_row(line)
+function M.parse_row(line, delimiter)
+  delimiter = delimiter or M.DELIMITER
+  local size = #delimiter
   local cells = {}
   local current = {}
   local index = 1
@@ -290,10 +339,10 @@ function M.parse_row(line)
     if char == "\\" and index < length then
       table.insert(current, line:sub(index, index + 1))
       index = index + 2
-    elseif char == "|" then
+    elseif line:sub(index, index + size - 1) == delimiter then
       table.insert(cells, table.concat(current))
       current = {}
-      index = index + 1
+      index = index + size
     else
       table.insert(current, char)
       index = index + 1
@@ -305,6 +354,46 @@ function M.parse_row(line)
     cells[position] = vim.trim(cell)
   end
   return cells
+end
+
+--- Resolve display-cell spans to byte offsets within one concrete line.
+---
+--- `M.spans` measures in display cells because that is what alignment is in;
+--- extmarks and `nvim_win_set_cursor` want bytes. On any row containing text
+--- outside ASCII the two disagree — a row holding "Łódź" put every span two
+--- bytes early, so highlights landed on the separator and following a foreign
+--- key read the wrong column. Anything using a span against a real line has to
+--- come through here.
+---@param line string
+---@param spans table[]
+---@return table[]
+function M.line_spans(line, spans)
+  -- Overwhelmingly the common case, and worth taking: when the line is pure
+  -- ASCII its byte offsets and its cell offsets are the same numbers.
+  if #line == M.width(line) then
+    return spans
+  end
+
+  local byte_of = {}
+  local cell, bytes = 0, 0
+  for _, char in ipairs(vim.fn.split(line, "\\zs")) do
+    local width = M.width(char)
+    -- A double-width character occupies two cells; both map to its first byte.
+    for step = 0, math.max(0, width - 1) do
+      byte_of[cell + step] = bytes
+    end
+    cell = cell + width
+    bytes = bytes + #char
+  end
+  byte_of[cell] = bytes
+
+  local resolved = {}
+  for index, span in pairs(spans) do
+    local start = byte_of[span.start] or #line
+    local finish = byte_of[span.finish] or #line
+    resolved[index] = { start = start, finish = finish, width = span.width }
+  end
+  return resolved
 end
 
 --- Which column a byte offset falls into.

@@ -196,7 +196,9 @@ function M.current_cell()
     return nil
   end
 
-  local column_index = grid.column_at(view.spans, position[2]) or 1
+  -- Spans are in display cells; the cursor reports bytes.
+  local line = vim.api.nvim_get_current_line()
+  local column_index = grid.column_at(grid.line_spans(line, view.spans), position[2]) or 1
   return {
     view = view,
     row_index = row_index,
@@ -218,8 +220,11 @@ local function move_to(view, row_index, column_index)
     column_index = visible[1]
   end
   column_index = math.max(1, math.min(column_index, #view.columns))
-  local span = view.spans[column_index] or view.spans[visible[1]]
-  pcall(vim.api.nvim_win_set_cursor, 0, { HEADER_LINES + row_index, span and span.start or 0 })
+  local line_number = HEADER_LINES + row_index
+  local text = vim.api.nvim_buf_get_lines(0, line_number - 1, line_number, false)[1] or ""
+  local spans = grid.line_spans(text, view.spans)
+  local span = spans[column_index] or spans[visible[1]]
+  pcall(vim.api.nvim_win_set_cursor, 0, { line_number, span and span.start or 0 })
 end
 
 --- Column index adjacent to `from`, skipping hidden columns.

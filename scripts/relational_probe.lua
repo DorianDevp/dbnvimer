@@ -197,7 +197,14 @@ else
       table = "inquiry",
     })
 
-    vim.api.nvim_win_set_cursor(0, { data.HEADER_LINES + 1, view.spans[index_of].start })
+    local first_row = vim.api.nvim_buf_get_lines(
+      view.bufnr,
+      data.HEADER_LINES,
+      data.HEADER_LINES + 1,
+      false
+    )[1] or ""
+    local byte_spans = require("dbclient.ui.grid").line_spans(first_row, view.spans)
+    vim.api.nvim_win_set_cursor(0, { data.HEADER_LINES + 1, byte_spans[index_of].start })
     data.follow_fk()
     vim.wait(20000, function()
       return trail.current() and trail.current().table == "user"

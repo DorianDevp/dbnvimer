@@ -76,6 +76,24 @@ local defaults = {
     virtual_fk = true,
     --- Pin the header row as a winbar while scrolling.
     sticky_header = true,
+
+    --- How the grid draws its rules: `"line"` uses box-drawing characters,
+    --- `"ascii"` is the fallback for terminals or fonts that mangle them.
+    --- Stored values are identical either way, so this is safe to change.
+    grid_style = "line",
+
+    --- The generated palette. Colours are derived from the colourscheme's own
+    --- background at a measured contrast rather than shipped as fixed hex
+    --- values, so the same design holds on a light theme and a dark one.
+    theme = {
+      enabled = true,
+      --- Force a background instead of reading it from `Normal`. Useful when
+      --- the terminal's background differs from what the colourscheme claims.
+      background = nil,
+      foreground = nil,
+      --- `{ palette = { accent = "#..." }, groups = { DBClientHeader = {...} } }`
+      overrides = nil,
+    },
   },
 
   --- Set to false to register no default mappings at all.

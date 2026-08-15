@@ -170,6 +170,111 @@ t.describe("grid spans", {
     local sizes = grid.widths(cols, { { "1", "2" } })
     local spans = grid.spans(cols, sizes)
     t.eq(grid.column_start(spans, 1), 0)
-    t.eq(grid.column_start(spans, 2), 3 + #grid.SEPARATOR)
+    -- Spans are display cells, so the separator counts as its width, not
+    -- its byte length.
+    t.eq(grid.column_start(spans, 2), 3 + grid.width(grid.SEPARATOR))
+  end,
+})
+
+t.describe("spans against a real line", {
+  --- The bug this guards: `spans` are display cells and every consumer feeds
+  --- them to something that wants bytes. On a row holding "Łódź" the two
+  --- differ, so highlights landed on the separator and following a foreign key
+  --- read the neighbouring column.
+  ["resolve to byte offsets on a multibyte row"] = function()
+    local cols = columns({ "city", "text" }, { "n", "number" })
+    local sizes = { 8, 3 }
+    local line = grid.render_row({ "Łódź", "42" }, cols, sizes)
+    local spans = grid.line_spans(line, grid.spans(cols, sizes))
+
+    t.eq(line:sub(spans[1].start + 1, spans[1].finish), "Łódź    ")
+    t.eq(line:sub(spans[2].start + 1, spans[2].finish), " 42")
+  end,
+
+  ["resolve on a row of double-width characters"] = function()
+    local cols = columns({ "name", "text" }, { "n", "number" })
+    local sizes = { 6, 3 }
+    local line = grid.render_row({ "東京都", "7" }, cols, sizes)
+    local spans = grid.line_spans(line, grid.spans(cols, sizes))
+
+    t.eq(line:sub(spans[1].start + 1, spans[1].finish), "東京都")
+    t.eq(line:sub(spans[2].start + 1, spans[2].finish), "  7")
+  end,
+
+  ["pass a pure-ASCII row straight through"] = function()
+    local cols = columns({ "a", "text" }, { "b", "text" })
+    local sizes = { 3, 3 }
+    -- The rule glyph itself is multibyte, so an all-ASCII *row* is only
+    -- unchanged under the ascii style.
+    grid.use_style("ascii")
+    local line = grid.render_row({ "xy", "z" }, cols, sizes)
+    local spans = grid.spans(cols, sizes)
+    t.eq(grid.line_spans(line, spans), spans)
+    grid.use_style("line")
+  end,
+
+  ["find the column under a byte offset inside multibyte text"] = function()
+    local cols = columns({ "city", "text" }, { "n", "number" })
+    local sizes = { 8, 3 }
+    local line = grid.render_row({ "Łódź", "42" }, cols, sizes)
+    local spans = grid.line_spans(line, grid.spans(cols, sizes))
+
+    -- A byte offset in the middle of the second column must not report the
+    -- first, which is what happened before spans were resolved per line.
+    t.eq(grid.column_at(spans, spans[2].start + 1), 2)
+    t.eq(grid.column_at(spans, 0), 1)
+  end,
+})
+
+t.describe("rule styles", {
+  ["round-trip a value through either style"] = function()
+    local cols = columns({ "note", "text" })
+    for _, style in ipairs({ "line", "ascii" }) do
+      grid.use_style(style)
+      for _, value in ipairs({
+        "plain",
+        "has | a pipe",
+        "has │ a bar",
+        "back\\slash",
+        "two\nlines",
+      }) do
+        local sizes = grid.widths(cols, { { value } })
+        local line = grid.render_row({ value }, cols, sizes)
+        local parsed = grid.parse_row(line)
+        t.eq(#parsed, 1, style .. ": " .. value .. " stayed in one cell")
+        t.eq(grid.parse_value(parsed[1], cols[1]), value, style .. ": " .. value)
+      end
+    end
+    grid.use_style("line")
+  end,
+
+  ["store the same text whichever style is drawing"] = function()
+    local cols = columns({ "note", "text" })
+    grid.use_style("line")
+    local drawn = grid.display("a | b │ c", cols[1])
+    grid.use_style("ascii")
+    t.eq(grid.display("a | b │ c", cols[1]), drawn, "escaping does not depend on the style")
+    grid.use_style("line")
+  end,
+
+  ["draw the header rule in the active glyph"] = function()
+    local cols = columns({ "id", "number" }, { "name", "text" })
+    local sizes = { 2, 4 }
+
+    grid.use_style("line")
+    local _, underline = grid.render_header(cols, sizes)
+    t.eq(underline, "──" .. "─┼─" .. "────")
+
+    grid.use_style("ascii")
+    local _, ascii = grid.render_header(cols, sizes)
+    t.eq(ascii, "--" .. "-+-" .. "----")
+    grid.use_style("line")
+  end,
+
+  ["fall back to the line style for an unknown name"] = function()
+    grid.use_style("nonsense")
+    t.eq(grid.SEPARATOR, grid.STYLES.line.separator)
+    grid.use_style(nil)
+    t.eq(grid.SEPARATOR, grid.STYLES.line.separator)
   end,
 })

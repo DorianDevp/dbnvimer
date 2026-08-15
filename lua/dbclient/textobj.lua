@@ -32,10 +32,23 @@ local function select_block(start_line, start_col, end_line, end_col)
   vim.api.nvim_win_set_cursor(0, { end_line, math.max(0, end_col) })
 end
 
+--- Byte spans for one buffer line.
+---
+--- `view.spans` is measured in display cells; every cursor position and every
+--- selection boundary here is a byte offset. They only coincide while the row
+--- is pure ASCII.
+---@param line integer  1-based buffer line
+---@param view table
+---@return table[]
+local function spans_for(line, view)
+  local text = vim.api.nvim_buf_get_lines(0, line - 1, line, false)[1] or ""
+  return grid.line_spans(text, view.spans)
+end
+
 --- Resolve the grid position under the cursor.
 ---@param view table
 ---@param header_lines integer
----@return { row: integer, column: integer, line: integer }|nil
+---@return { row: integer, column: integer, line: integer, spans: table[] }|nil
 local function locate(view, header_lines)
   if not view or not view.spans then
     return nil
@@ -45,11 +58,12 @@ local function locate(view, header_lines)
   if row < 1 or row > #(view.rows or {}) then
     return nil
   end
-  local column = grid.column_at(view.spans, position[2])
+  local spans = spans_for(position[1], view)
+  local column = grid.column_at(spans, position[2])
   if not column then
     return nil
   end
-  return { row = row, column = column, line = position[1] }
+  return { row = row, column = column, line = position[1], spans = spans }
 end
 
 --- Attach the text objects to a buffer.
@@ -63,7 +77,7 @@ function M.attach(bufnr, resolve)
       if not at then
         return
       end
-      local span = view.spans[at.column]
+      local span = at.spans[at.column]
       select_chars(at.line, span.start, at.line, span.finish - 1)
     end,
 
@@ -73,7 +87,7 @@ function M.attach(bufnr, resolve)
       if not at then
         return
       end
-      local span = view.spans[at.column]
+      local span = at.spans[at.column]
       local line = vim.api.nvim_get_current_line()
       local finish = math.min(#line - 1, span.finish + #grid.SEPARATOR - 1)
       select_chars(at.line, span.start, at.line, finish)
@@ -104,12 +118,15 @@ function M.attach(bufnr, resolve)
       if not at then
         return
       end
-      local span = view.spans[at.column]
+      -- A block spans rows whose byte offsets differ, so each end resolves
+      -- against its own line.
+      local first = spans_for(header_lines + 1, view)[at.column]
+      local last = spans_for(header_lines + #view.rows, view)[at.column]
       select_block(
         header_lines + 1,
-        span.start,
+        first.start,
         header_lines + #view.rows,
-        span.finish - 1
+        last.finish - 1
       )
     end,
 
@@ -119,12 +136,13 @@ function M.attach(bufnr, resolve)
       if not at then
         return
       end
-      local span = view.spans[at.column]
+      local first = spans_for(header_lines + 1, view)[at.column]
+      local last = spans_for(header_lines + #view.rows, view)[at.column]
       select_block(
         header_lines + 1,
-        span.start,
+        first.start,
         header_lines + #view.rows,
-        span.finish + #grid.SEPARATOR - 1
+        last.finish + #grid.SEPARATOR - 1
       )
     end,
   }
@@ -147,11 +165,11 @@ function M.attach(bufnr, resolve)
     if not at then
       return vim.cmd("normal! w")
     end
-    local span = view.spans[at.column + 1]
+    local span = at.spans[at.column + 1]
     if span then
       vim.api.nvim_win_set_cursor(0, { at.line, span.start })
     elseif at.row < #view.rows then
-      local first = grid.column_start(view.spans, 1)
+      local first = grid.column_start(spans_for(at.line + 1, view), 1)
       vim.api.nvim_win_set_cursor(0, { at.line + 1, first })
     end
   end, { buffer = bufnr, silent = true, desc = "DBClient: next cell" })
@@ -162,12 +180,12 @@ function M.attach(bufnr, resolve)
     if not at then
       return vim.cmd("normal! b")
     end
-    local span = view.spans[at.column - 1]
+    local span = at.spans[at.column - 1]
     if span then
       vim.api.nvim_win_set_cursor(0, { at.line, span.start })
     elseif at.row > 1 then
       local last = 0
-      for _, candidate in pairs(view.spans) do
+      for _, candidate in pairs(spans_for(at.line - 1, view)) do
         last = math.max(last, candidate.start)
       end
       vim.api.nvim_win_set_cursor(0, { at.line - 1, last })

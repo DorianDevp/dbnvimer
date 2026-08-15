@@ -136,7 +136,8 @@ function M.current_cell()
   if row_index < 1 or row_index > #view.rows then
     return nil
   end
-  local column_index = grid.column_at(view.spans, position[2]) or 1
+  local line = vim.api.nvim_get_current_line()
+  local column_index = grid.column_at(grid.line_spans(line, view.spans), position[2]) or 1
   return {
     view = view,
     row_index = row_index,
@@ -154,8 +155,10 @@ local function move(row_delta, column_delta)
   end
   local row_index = math.max(1, math.min(cell.row_index + row_delta, #cell.view.rows))
   local column_index = math.max(1, math.min(cell.column_index + column_delta, #cell.view.columns))
-  local span = cell.view.spans[column_index]
-  pcall(vim.api.nvim_win_set_cursor, 0, { HEADER_LINES + row_index, span and span.start or 0 })
+  local line_number = HEADER_LINES + row_index
+  local text = vim.api.nvim_buf_get_lines(0, line_number - 1, line_number, false)[1] or ""
+  local span = grid.line_spans(text, cell.view.spans)[column_index]
+  pcall(vim.api.nvim_win_set_cursor, 0, { line_number, span and span.start or 0 })
 end
 
 function M.inspect_value()

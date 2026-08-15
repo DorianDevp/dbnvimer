@@ -73,8 +73,11 @@ t.describe("export formats", {
   end,
 
   ["the plain format is the aligned grid"] = function()
+    -- The same renderer as the UI, so an exported table looks like the one it
+    -- was exported from — including the rule style.
+    local grid = require("dbclient.ui.grid")
     local lines = export.render(data, "table")
-    t.matches(lines[2], "^%-%-")
+    t.matches(lines[2], "^" .. vim.pesc(grid.RULE .. grid.RULE))
   end,
 
   ["formats are chosen by extension"] = function()
