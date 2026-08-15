@@ -66,9 +66,13 @@ local defaults = {
     max_cell_width = 48,
     preview_limit = 200,
     query_limit = 5000,
-    --- Shown in place of a SQL NULL. Always highlighted differently from the
-    --- literal text "NULL", which renders as-is.
-    null_display = "∅",
+    --- Shown in place of a SQL NULL, the way every other client shows it.
+    ---
+    --- The data buffer is editable text, so this cannot simply be the same
+    --- characters a row might legitimately hold: a value that renders exactly
+    --- like the sentinel is prefixed with a backslash, so `NULL` is the SQL
+    --- value and `\NULL` is the four-letter string. See `ui/grid.lua`.
+    null_display = "NULL",
     bool_display = { "true", "false" },
     row_stripes = true,
     winbar = true,

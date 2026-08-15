@@ -169,6 +169,13 @@ end
 ---
 --- Returns the text plus a flag saying whether the cell is a SQL NULL, which
 --- the caller uses to pick a highlight group.
+---
+--- A value that would render exactly like the NULL sentinel is prefixed with a
+--- backslash. The sentinel says `NULL` because that is what every client says
+--- and there is no reason to be different; but this grid is editable and round
+--- trips through text, so the SQL value and the four-letter string have to be
+--- distinguishable, and one escaped character is a smaller price than an
+--- unfamiliar symbol.
 ---@param value any
 ---@param column table|nil
 ---@return string text, boolean is_null
@@ -194,7 +201,11 @@ function M.display(value, column)
     end
   end
 
-  return M.escape(text), false
+  local escaped = M.escape(text)
+  if escaped == config.get().ui.null_display then
+    escaped = "\\" .. escaped
+  end
+  return escaped, false
 end
 
 --- Turn display text back into a value.
@@ -208,6 +219,11 @@ function M.parse_value(text, column)
   local settings = config.get().ui
   if text == settings.null_display then
     return vim.NIL
+  end
+  -- The escaped sentinel is the literal string, not the SQL value. Checked
+  -- before `unescape`, which knows nothing about the sentinel.
+  if text == "\\" .. settings.null_display then
+    return settings.null_display
   end
 
   if column and column.class == "bool" then

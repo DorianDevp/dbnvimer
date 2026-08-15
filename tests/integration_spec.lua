@@ -219,10 +219,12 @@ t.describe("integration: data buffer", {
     local second = grid.parse_row(lines[2])
 
     t.eq(first[2], "Łódź")
-    t.eq(first[4], config.get().ui.null_display, "a real NULL renders as the placeholder")
-    t.eq(second[2], "NULL", "the literal string NULL renders verbatim")
+    t.eq(first[4], config.get().ui.null_display, "a real NULL renders as NULL")
+    -- The buffer is editable, so the two cannot be the same characters: the
+    -- string that would collide with the sentinel carries a backslash.
+    t.eq(second[2], "\\NULL", "the literal string is escaped away from it")
     t.eq(grid.parse_value(first[4], view.columns[4]), vim.NIL)
-    t.eq(grid.parse_value(second[2], view.columns[2]), "NULL")
+    t.eq(grid.parse_value(second[2], view.columns[2]), "NULL", "and comes back intact")
   end },
 
   { "escapes separators and newlines reversibly", function()

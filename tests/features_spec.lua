@@ -432,6 +432,9 @@ t.describe("charts", {
       ),
       { width = 40 }
     )
-    t.matches(table.concat(lines, "\n"), "∅")
+    t.matches(
+      table.concat(lines, "\n"),
+      vim.pesc(require("dbclient.config").get().ui.null_display)
+    )
   end,
 })

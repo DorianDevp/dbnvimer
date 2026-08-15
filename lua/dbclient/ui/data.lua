@@ -387,7 +387,7 @@ function M.open(opts)
     via = opts.via,
   })
 
-  buffer.show(bufnr, opts.split or "botright split")
+  buffer.show(bufnr, opts.split or "botright split", { reuse_empty = true })
   vim.wo.cursorline = true
   vim.wo.wrap = false
   winbar.bind(bufnr, target.id)

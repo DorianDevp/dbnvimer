@@ -576,7 +576,7 @@ function M.open(opts)
   vim.bo[bufnr].buftype = "nofile"
   vim.bo[bufnr].bufhidden = "hide"
 
-  buffer.show(bufnr, opts.split or "vsplit")
+  buffer.show(bufnr, opts.split or "vsplit", { reuse_empty = true })
   winbar.bind(bufnr, target.id)
 
   if first then

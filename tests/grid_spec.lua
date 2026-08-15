@@ -2,7 +2,7 @@ local t = require("tests.init")
 local config = require("dbclient.config")
 local grid = require("dbclient.ui.grid")
 
-config.setup({ connections = {}, ui = { null_display = "∅", max_cell_width = 48 } })
+config.setup({ connections = {}, max_cell_width = 48 })
 
 local function columns(...)
   local list = {}
@@ -77,26 +77,48 @@ t.describe("grid widths", {
     local cols = columns({ "c", "text" })
     local sizes = grid.widths(cols, { { "a very long value indeed" } })
     t.eq(sizes[1], 6)
-    config.setup({ connections = {}, ui = { null_display = "∅", max_cell_width = 48 } })
+    config.setup({ connections = {} })
   end,
 })
 
 t.describe("grid null handling", {
-  ["renders SQL NULL with the placeholder"] = function()
+  ["renders SQL NULL as NULL, like every other client"] = function()
     local text, is_null = grid.display(vim.NIL, { class = "text" })
-    t.eq(text, "∅")
+    t.eq(text, "NULL")
     t.ok(is_null)
   end,
 
-  ["renders the literal string NULL verbatim"] = function()
+  ["escapes a value that would render exactly like it"] = function()
+    -- The grid is editable and round trips through text, so the SQL value and
+    -- the four-letter string cannot be the same characters. One backslash is a
+    -- smaller price than an unfamiliar symbol.
     local text, is_null = grid.display("NULL", { class = "text" })
-    t.eq(text, "NULL")
+    t.eq(text, "\\NULL")
     t.falsy(is_null)
   end,
 
-  ["parses the placeholder back to NULL"] = function()
+  ["round-trips both of them"] = function()
+    t.eq(grid.parse_value("NULL", { class = "text" }), vim.NIL)
+    t.eq(grid.parse_value("\\NULL", { class = "text" }), "NULL")
+
+    for _, value in ipairs({ vim.NIL, "NULL", "\\NULL", "null", "NULLED" }) do
+      local rendered = grid.display(value, { class = "text" })
+      t.eq(
+        grid.parse_value(rendered, { class = "text" }),
+        value,
+        ("%s survived the round trip as %q"):format(tostring(value), rendered)
+      )
+    end
+  end,
+
+  ["follows the sentinel when it is configured to something else"] = function()
+    config.setup({ connections = {}, ui = { null_display = "∅" } })
+    t.eq((grid.display(vim.NIL, { class = "text" })), "∅")
     t.eq(grid.parse_value("∅", { class = "text" }), vim.NIL)
+    -- And the collision moves with it: "NULL" is now an ordinary string.
+    t.eq((grid.display("NULL", { class = "text" })), "NULL")
     t.eq(grid.parse_value("NULL", { class = "text" }), "NULL")
+    config.setup({ connections = {} })
   end,
 })
 

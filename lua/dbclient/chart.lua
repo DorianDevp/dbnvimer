@@ -165,7 +165,7 @@ function M.render(result, opts)
     if value then
       local label = label_index and row[label_index] or tostring(index)
       if label == nil or label == vim.NIL then
-        label = "∅"
+        label = require("dbclient.config").get().ui.null_display
       end
       table.insert(points, { label = tostring(label), value = value })
       max = math.max(max, value)

@@ -86,11 +86,54 @@ end
 ---@param bufnr integer
 ---@param command string  window command, e.g. `botright 14split`
 ---@return integer winid
-function M.show(bufnr, command)
+--- A window holding an empty, unnamed, untouched buffer.
+---
+--- The window Neovim starts with, in other words. Splitting away from it and
+--- leaving it there costs a third of the screen to show nothing, and squashes
+--- everything else to make room.
+---@return integer|nil
+local function scratch_window()
+  for _, win in ipairs(vim.api.nvim_list_wins()) do
+    if vim.api.nvim_win_get_config(win).relative == "" then
+      local bufnr = vim.api.nvim_win_get_buf(win)
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, 2, false)
+      if
+        vim.api.nvim_buf_get_name(bufnr) == ""
+        and vim.bo[bufnr].buftype == ""
+        and not vim.bo[bufnr].modified
+        and #lines <= 1
+        and (lines[1] or "") == ""
+      then
+        return win
+      end
+    end
+  end
+end
+
+--- Put a buffer on screen.
+---
+--- `opts.reuse_empty` takes over the startup window when there is one, rather
+--- than splitting away from it. Content the user asked to look at should land
+--- where they are looking; a result panel, which belongs *under* something,
+--- should not.
+---@param bufnr integer
+---@param command string
+---@param opts? { reuse_empty?: boolean }
+---@return integer winid
+function M.show(bufnr, command, opts)
   local existing = M.windows(bufnr)[1]
   if existing then
     vim.api.nvim_set_current_win(existing)
     return existing
+  end
+
+  if opts and opts.reuse_empty then
+    local empty = scratch_window()
+    if empty then
+      vim.api.nvim_set_current_win(empty)
+      vim.api.nvim_win_set_buf(empty, bufnr)
+      return empty
+    end
   end
 
   vim.cmd(command)
